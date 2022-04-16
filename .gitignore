@@ -3,3 +3,6 @@ tmp/
 *.o
 *.so
 mprg
+embedded_resources.c
+embedded_resources.h
+make_embedded_resources_dot_c
