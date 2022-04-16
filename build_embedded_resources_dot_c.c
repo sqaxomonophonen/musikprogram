@@ -17,7 +17,6 @@ FILE* h_out;
 
 static uint8_t* read_file(const char* path, size_t* size)
 {
-	assert(size);
 	FILE* f = fopen(path, "rb");
 	if (!f) {
 		fprintf(stderr, "%s: no such file\n", path);
@@ -25,45 +24,99 @@ static uint8_t* read_file(const char* path, size_t* size)
 	}
 	assert(f);
 	fseek(f, 0, SEEK_END);
-	*size = ftell(f);
+	long sz = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	uint8_t* data = malloc(*size);
-	assert(data);
-	assert(fread(data, *size, 1, f) == 1);
+	uint8_t* data = malloc(sz+1);
+	assert(fread(data, sz, 1, f) == 1);
+	data[sz] = 0;
 	fclose(f);
+	if (size) *size = sz;
 	return data;
 }
 
+static char** split_lines(char* s)
+{
+	const int max_lines = 10007;
+	char** lines = calloc(max_lines, sizeof(*lines));
+	char* p = s;
+	int i = 0;
+	for (;;) {
+		const char* p0 = p;
+		while (*p != 0 && *p != '\n') p++;
+		const char* p1 = p;
+		const int n = p1-p0;
+		char* line = malloc(n+1);
+		memcpy(line, p0, n);
+		line[n] = 0;
+		lines[i++] = line;
+		assert(i < max_lines);
+		if (*p1 == 0) break;
+		p++;
+	}
+	return lines;
+}
+
+static char** read_lines(const char* path)
+{
+	return split_lines(read_file(path, NULL));
+}
+
+static void inc_wgsl(const char* path)
+{
+	int line_number = 0;
+	for (char** lines = read_lines(path); *lines; lines++) {
+		line_number++;
+		char* line = *lines;
+
+		// check for #include
+		{
+			char* p = line;
+			while (*p != 0 && (*p == ' ' || *p == '\t')) p++;
+			if (*p == '#') {
+				const char match_include[] = "#include \"";
+				if (memcmp(p, match_include, sizeof(match_include)-1) == 0) {
+					p += sizeof(match_include)-1;
+					const char* p0 = p;
+					while (*p != 0 && *p != '\n' && *p != '\"') p++;
+					assert((*p == '\"') );
+					if (*p != '\"') {
+						fprintf(stderr, "#include not terminated at line %d\n", line_number);
+						abort();
+					}
+					const char* p1 = p;
+					const int n = p1-p0;
+					char* inc_path = malloc(n+1);
+					memcpy(inc_path, p0, n);
+					inc_path[n] = 0;
+					inc_wgsl(inc_path);
+					continue;
+				} else {
+					fprintf(stderr, "unhandled \"#\"-directive at line %d\n", line_number);
+					abort();
+				}
+			}
+		}
+
+		// pass line as-is
+		fprintf(c_out, "\"");
+		const int n = strlen(line);
+		for (int i = 0; i < n; i++) {
+			char c = line[i];
+			switch (c) {
+			case '\t': fputc('\t', c_out); break;
+			case '\"': fprintf(c_out, "\\\""); break;
+			case '\\': fprintf(c_out, "\\\\"); break;
+			default: fputc(c, c_out); break;
+			}
+		}
+		fprintf(c_out, "\\n\"\n");
+	}
+}
 
 static void add_wgsl(const char* path, const char* symbol)
 {
-	size_t sz;
-	uint8_t* data = read_file(path, &sz);
-
 	fprintf(c_out, "char* %s =\n", symbol);
-
-	int newline = 1;
-	char* p = data;
-	for (;;) {
-		char c = *(p++);
-		if (c == 0) break;
-		if (newline) {
-			fprintf(c_out, "\"");
-			newline = 0;
-		}
-		if (c == '\n') {
-			fprintf(c_out, "\\n\"\n");
-			newline = 1;
-		} else if (c == '\t') {
-			fprintf(c_out, "\t");
-		} else if (c == '\"') {
-			fprintf(c_out, "\\\"");
-		} else {
-			assert(' ' <= c && c <= '~');
-			fprintf(c_out, "%c", c);
-		}
-	}
-
+	inc_wgsl(path);
 	fprintf(c_out, ";\n\n");
 
 	fprintf(h_out, "extern char* %s;\n", symbol);
