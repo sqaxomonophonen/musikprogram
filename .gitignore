@@ -5,4 +5,4 @@ tmp/
 mprg
 embedded_resources.c
 embedded_resources.h
-make_embedded_resources_dot_c
+build_embedded_resources_dot_c
