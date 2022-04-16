@@ -506,10 +506,20 @@ int main(int argc, char** argv)
 			r_begin_frame(window, v);
 
 			r_begin(R_MODE_VECTOR);
-			rv_quad(0, 0, 100, 100, 0xffffffff);
-			rv_quad(500, 200, 100, 300, 0xffffffff);
-			rv_quad(200, 200, 100, 300, 0xffffffff);
+			rv_quad(0,               0,                window->width/2, window->height/2, 0xff0000ff);
+			rv_quad(window->width/2, 0,                window->width/2, window->height/2, 0x00ff00ff);
+			rv_quad(0,               window->height/2, window->width/2, window->height/2, 0x0000ffff);
+			rv_quad(window->width/2, window->height/2, window->width/2, window->height/2, 0xffffffff);
+			//rv_quad(500, 200, 100, 300, 0xffffffff);
+			//rv_quad(200, 200, 100, 300, 0xffffffff);
 			r_end();
+
+
+			#if 0
+			r_begin(R_MODE_VECTOR);
+			rv_quad(0, 200, 100, 300, 0xffffffff);
+			r_end();
+			#endif
 
 			r_end_frame();
 
