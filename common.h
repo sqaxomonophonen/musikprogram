@@ -11,6 +11,8 @@
 #define MEMBER_SIZE(t,m) sizeof(((t *)0)->m)
 #define MEMBER_OFFSET(t,m) (void*)((size_t)&(((t *)0)->m))
 
+#define MAX(a,b) ((a)>(b)?(a):(b))
+
 extern int verbosity;
 #define VB(x) (verbosity >= (x))
 #define VB0 VB(0)
