@@ -11,6 +11,26 @@
 
 #define MAX_WINDOWS (16)
 
+#define VTXBUF_SZ (1<<22) // 4MB
+
+#define STATIC_QUADS_IDXBUF_SZ ((1<<16)+(1<<15))
+// The static quad index buffer contains indices like this:
+//  [
+//   0,1,2,0,2,3,
+//   4,5,6,4,6,7,
+//   ...
+//   65532,65533,65534,65532,65534,65535
+//  ]
+// It's for drawing quads from triangles like this:
+//   0---1
+//   |\  |
+//   | \ |   (add quad_index*4)
+//   |  \|
+//   3---2
+// I.e. it allows me to add 4 vertices to the vertex buffer in order to draw a
+// quad, and the index buffer expands each quad to 2 triangles. Since there are
+// 6 indices per 4 vertices, the size must be 65536*(6/4) (to "max it out")
+
 enum {
 	R_MODE_ATLAS = 1,
 	R_MODE_PLOT,
@@ -52,12 +72,6 @@ struct window {
 	#endif
 };
 
-// Max Buffer Elements (element=quad)
-#define MBE_ATLAS  (1<<14)
-#define MBE_PLOT   (1<<6)
-#define MBE_VECTOR (1<<14)
-#define MBE_ALL    MAX(MAX(MBE_ATLAS,MBE_PLOT),MBE_VECTOR)
-
 struct atlas_vtx {
 	union v2 a_pos;
 	union v2 a_uv;
@@ -90,13 +104,16 @@ struct vector_uni {
 	int dst_dim[2];
 };
 
-#define UNIBUF_SZ MAX(MAX(sizeof(struct atlas_uni), sizeof(struct plot_uni)), sizeof(struct vector_uni))
-
 struct r {
 	int mode;
 	struct window* window;
-	WGPUTextureView swap_chain_texture_view;
-	int pass;
+	WGPUTextureView render_target_texture_view;
+	int n_passes;
+	int cursor0;
+	int n_static_quad_indices;
+	WGPUCommandEncoder encoder;
+	WGPURenderPipeline pipeline;
+	WGPUBindGroup bind_group;
 };
 
 struct mprg {
@@ -106,21 +123,17 @@ struct mprg {
 	WGPUDevice device;
 	WGPUQueue queue;
 
-	WGPUBuffer idxbuf;
+	WGPUBuffer static_quad_idxbuf;
 	WGPUBuffer vtxbuf;
-	WGPUBuffer unibuf;
 
 	int vtxbuf_cursor;
-	union {
-		struct atlas_vtx   atlas[4*MBE_ATLAS];
-		struct plot_vtx    plot[4*MBE_PLOT];
-		struct vector_vtx  vector[4*MBE_VECTOR];
-	} vtxbuf_data;
+	uint8_t vtxbuf_data[VTXBUF_SZ];
 
 	struct r r;
 
-	WGPURenderPipeline pipeline_vector;
-	WGPUBindGroup bind_group_vector;
+	WGPUBuffer          vector_unibuf;
+	WGPURenderPipeline  vector_pipeline;
+	WGPUBindGroup       vector_bind_group;
 } mprg;
 
 static void new_window()
@@ -153,13 +166,107 @@ static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
 	return shader;
 }
 
-static void r_begin_frame(struct window* w, WGPUTextureView v)
+static void r_flush(int do_submit_queue)
+{
+	struct r* r = &mprg.r;
+	assert(mprg.vtxbuf_cursor >= r->cursor0);
+	const int n = (mprg.vtxbuf_cursor - r->cursor0);
+	if (n == 0 && !do_submit_queue) return; // nothing to do
+
+	if (r->encoder == NULL) {
+		if (do_submit_queue && n == 0) {
+			// don't submit empty queue
+			return;
+		}
+		r->encoder = wgpuDeviceCreateCommandEncoder(mprg.device, &(WGPUCommandEncoderDescriptor){});
+		assert(r->encoder != NULL);
+	}
+
+	if (n > 0) {
+		assert(r->mode > 0);
+
+		assert(r->encoder != NULL);
+		assert(r->render_target_texture_view != NULL);
+		WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(
+			r->encoder,
+			&(WGPURenderPassDescriptor){
+				.colorAttachmentCount = 1,
+				.colorAttachments = &(WGPURenderPassColorAttachment){
+					.view = r->render_target_texture_view,
+					.resolveTarget = 0,
+					.loadOp = r->n_passes == 0 ? WGPULoadOp_Clear : WGPULoadOp_Load, // first pass clears the target
+					.storeOp = WGPUStoreOp_Store,
+					.clearValue = (WGPUColor){},
+				},
+				.depthStencilAttachment = NULL,
+			}
+		);
+
+		assert(r->pipeline != NULL);
+		wgpuRenderPassEncoderSetPipeline(pass, r->pipeline);
+
+		if (r->bind_group != NULL) {
+			wgpuRenderPassEncoderSetBindGroup(pass, 0, r->bind_group, 0, 0);
+		}
+
+		wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mprg.vtxbuf, r->cursor0, n);
+
+		wgpuRenderPassEncoderSetIndexBuffer(
+			pass,
+			mprg.static_quad_idxbuf,
+			WGPUIndexFormat_Uint16,
+			0,
+			sizeof(uint16_t)*r->n_static_quad_indices);
+		wgpuRenderPassEncoderDrawIndexed(pass, r->n_static_quad_indices, 1, 0, 0, 0);
+
+		wgpuRenderPassEncoderEnd(pass);
+		r->n_passes++;
+		r->cursor0 = mprg.vtxbuf_cursor;
+		r->n_static_quad_indices = 0;
+	}
+
+	if (do_submit_queue) {
+		assert(r->encoder != NULL);
+
+		// XXX assuming that wgpuRenderPassEncoderSetVertexBuffer()
+		// doesn't do any buffer copying, so that it's fine to write
+		// the entire vertex buffer just before submitting the queue.
+		// if this is not the case, do wgpuQueueWriteBuffer() with
+		// appropriate offset before setting the vertex buffer?
+		wgpuQueueWriteBuffer(mprg.queue, mprg.vtxbuf, 0, &mprg.vtxbuf_data, mprg.vtxbuf_cursor);
+
+		WGPUCommandBuffer cmdbuf = wgpuCommandEncoderFinish(r->encoder, &(WGPUCommandBufferDescriptor){});
+		wgpuQueueSubmit(mprg.queue, 1, &cmdbuf);
+		r->encoder = NULL;
+		mprg.vtxbuf_cursor = 0;
+	}
+}
+
+static void r_begin_frame(struct window* w, WGPUTextureView swap_chain_texture_view)
 {
 	struct r* r = &mprg.r;
 	assert((r->window == NULL) && "frame already begun");
+	assert(mprg.vtxbuf_cursor == 0);
+
+	memset(r, 0, sizeof *r);
 	r->window = w;
-	r->swap_chain_texture_view = v;
-	r->pass = 0;
+	r->render_target_texture_view = swap_chain_texture_view; // XXX this is not always the case...
+
+	// write all uniform buffers;
+	//  - optimistically assuming that all uniform buffers are probably
+	//    going to be used...
+	//  - if some buffers are NOT used, I'm assuming writes are cheap :-)
+	//  - contents are invariant ("uniform") for an entire frame, so this
+	//    is a good place to write uniforms; at the beginning of a "frame"
+	//  - since uniforms belong to a bind group it doesn't make a lot of
+	//    sense to do "intra-frame uniform buffer writes" anyway?
+
+	{
+		struct vector_uni u = {
+			.dst_dim = { w->width, w->height },
+		};
+		wgpuQueueWriteBuffer(mprg.queue, mprg.vector_unibuf, 0, &u, sizeof u);
+	}
 }
 
 static void r_end_frame()
@@ -167,6 +274,7 @@ static void r_end_frame()
 	struct r* r = &mprg.r;
 	assert((r->mode == 0) && "mode not r_end()'d");
 	assert((r->window != NULL) && "r_begin_frame() not called");
+	r_flush(1);
 	r->window = NULL;
 }
 
@@ -177,94 +285,45 @@ static void r_begin(int mode)
 
 	switch (mode) {
 	case R_MODE_VECTOR:
+		r->pipeline = mprg.vector_pipeline;
+		r->bind_group = mprg.vector_bind_group;
 		break;
 	default: assert(!"unhandled mode");
 	}
 
+	r->cursor0 = mprg.vtxbuf_cursor;
 	r->mode = mode;
 }
 
 static void r_end()
 {
+	r_flush(0);
 	struct r* r = &mprg.r;
-	assert((r->mode > 0) && "not in a mode");
-	const int mode = r->mode;
 	r->mode = 0;
-	const int n_elements = mprg.vtxbuf_cursor;
-	mprg.vtxbuf_cursor = 0;
+}
 
-	if (n_elements <= 0) return;
+static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
+{
+	assert(((vtxbuf_requested&3) == 0) && "vtxbuf_requested must be 4-byte aligned");
+	struct r* r = &mprg.r;
+	int vtxbuf_required = mprg.vtxbuf_cursor + vtxbuf_requested;
+	int idxbuf_required = r->n_static_quad_indices + idxbuf_requested;
+	if ((vtxbuf_required > VTXBUF_SZ) || (idxbuf_required > STATIC_QUADS_IDXBUF_SZ)) r_flush(1);
+	assert((mprg.vtxbuf_cursor + vtxbuf_requested) <= VTXBUF_SZ);
+	assert((r->n_static_quad_indices + idxbuf_requested ) <= STATIC_QUADS_IDXBUF_SZ);
 
-	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(mprg.device, &(WGPUCommandEncoderDescriptor){});
+	void* p = mprg.vtxbuf_data + mprg.vtxbuf_cursor;
+	mprg.vtxbuf_cursor += vtxbuf_requested;
+	assert((mprg.vtxbuf_cursor&3) == 0);
 
-	WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(
-		encoder,
-		&(WGPURenderPassDescriptor){
-			.colorAttachmentCount = 1,
-			.colorAttachments = &(WGPURenderPassColorAttachment){
-			.view = r->swap_chain_texture_view, // XXX ask postproc stuff; we might not be rendering to swap chain texture
-			.resolveTarget = 0,
-			.loadOp = r->pass == 0 ? WGPULoadOp_Clear : WGPULoadOp_Load,
-			.clearValue = (WGPUColor){},
-			.storeOp = WGPUStoreOp_Store,
-		},
-		.depthStencilAttachment = NULL,
-	});
+	r->n_static_quad_indices += idxbuf_requested;
 
-
-	WGPURenderPipeline pipeline = NULL;
-	WGPUBindGroup bind_group = NULL;
-	size_t vtxsz = 0;
-	size_t unisz = 0;
-
-	union {
-		struct atlas_uni atlas;
-		struct plot_uni plot;
-		struct vector_uni vector;
-	} unidata;
-
-	switch (mode) {
-	case R_MODE_VECTOR:
-		pipeline = mprg.pipeline_vector;
-		bind_group = mprg.bind_group_vector;
-		vtxsz = sizeof(mprg.vtxbuf_data.vector[0]);
-		unisz = sizeof(unidata.vector);
-		struct vector_uni* u = &unidata.vector;
-		u->dst_dim[0] = r->window->width;
-		u->dst_dim[1] = r->window->height;
-		break;
-	default: assert(!"unhandled mode");
-	}
-
-	assert(pipeline != NULL);
-	assert(bind_group != NULL);
-	assert(vtxsz > 0);
-	assert(unisz > 0);
-
-	const int n_indices  = 6*n_elements;
-	const int n_vertices = 4*n_elements;
-
-	wgpuQueueWriteBuffer(mprg.queue, mprg.vtxbuf, 0, &mprg.vtxbuf_data, n_vertices*vtxsz);
-	wgpuQueueWriteBuffer(mprg.queue, mprg.unibuf, 0, &unidata, unisz);
-
-	wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-	wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, 0);
-	wgpuRenderPassEncoderSetIndexBuffer(pass, mprg.idxbuf, WGPUIndexFormat_Uint16, 0, sizeof(uint16_t)*n_indices);
-	wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mprg.vtxbuf, 0, vtxsz*n_vertices);
-	wgpuRenderPassEncoderDrawIndexed(pass, n_indices, 1, 0, 0, 0);
-
-	wgpuRenderPassEncoderEnd(pass);
-
-	WGPUCommandBuffer cmdbuf = wgpuCommandEncoderFinish(encoder, &(WGPUCommandBufferDescriptor){});
-	wgpuQueueSubmit(mprg.queue, 1, &cmdbuf);
-
-	r->pass++;
+	return p;
 }
 
 static void rv_quad(float x, float y, float w, float h, uint32_t color)
 {
-	// XXX no overflow handling...
-	struct vector_vtx* pv = &mprg.vtxbuf_data.vector[4*mprg.vtxbuf_cursor++];
+	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
 	pv[0].a_pos.x = x;
 	pv[0].a_pos.y = y;
@@ -297,26 +356,18 @@ int main(int argc, char** argv)
 	mprg.queue = queue;
 
 	{
-		// we're drawing a lot of quads via triangles:
-		//   0---1
-		//   |\  |
-		//   | \ |
-		//   |  \|
-		//   3---2
-		// so prepare static index buffer with indices like:
-		//   0,1,2,0,2,3,
-		//   4,5,6,4,6,7,
-		//   and so on...
-		const int n_indices = 6*MBE_ALL; // 4 vertices per quad; 2 triangles; 6 indices
-		uint16_t indices[n_indices];
-		size_t size = sizeof(indices[0])*n_indices;
-		mprg.idxbuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
+		// prepare "static quads index buffer"; see
+		// STATIC_QUADS_IDXBUF_SZ comment
+		uint16_t indices[STATIC_QUADS_IDXBUF_SZ];
+		size_t size = sizeof(indices[0])*STATIC_QUADS_IDXBUF_SZ;
+		mprg.static_quad_idxbuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
 			.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
 			.size = size,
 		});
-		assert(mprg.idxbuf);
+		assert(mprg.static_quad_idxbuf);
 		int offset = 0;
-		for (int i = 0; i < n_indices; i += 6, offset += 4) {
+		for (int i = 0; i < STATIC_QUADS_IDXBUF_SZ; i += 6, offset += 4) {
+			assert(0 <= offset && offset <= (65536-4));
 			indices[i+0] = offset+0;
 			indices[i+1] = offset+1;
 			indices[i+2] = offset+2;
@@ -324,7 +375,7 @@ int main(int argc, char** argv)
 			indices[i+4] = offset+2;
 			indices[i+5] = offset+3;
 		}
-		wgpuQueueWriteBuffer(queue, mprg.idxbuf, 0, indices, size);
+		wgpuQueueWriteBuffer(queue, mprg.static_quad_idxbuf, 0, indices, size);
 	}
 
 	// prepare dynamic vertex buffer
@@ -335,19 +386,18 @@ int main(int argc, char** argv)
 	assert(mprg.vtxbuf);
 	//printf("vtxbuf is %zd bytes\n", sizeof(mprg.vtxbuf_data));
 
-	// prepare uniform buffer
-	mprg.unibuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
-		.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-		.size = UNIBUF_SZ,
-	});
-	assert(mprg.unibuf);
-
-
 	// R_MODE_VECTOR
 	{
+		const size_t unisz = sizeof(struct vector_uni);
+
+		mprg.vector_unibuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
+			.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+			.size = unisz,
+		});
+		assert(mprg.vector_unibuf);
+
 		WGPUShaderModule shader = mk_shader_module(device, shadersrc_vector);
 
-		const size_t unisz = sizeof(struct vector_uni);
 
 		WGPUBindGroupLayout bind_group_layout = wgpuDeviceCreateBindGroupLayout(
 			device,
@@ -368,13 +418,13 @@ int main(int argc, char** argv)
 		);
 		assert(bind_group_layout);
 
-		mprg.bind_group_vector = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
+		mprg.vector_bind_group = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
 			.layout = bind_group_layout,
 			.entryCount = 1,
 			.entries = (WGPUBindGroupEntry[]){
 				(WGPUBindGroupEntry){
 					.binding = 0,
-					.buffer = mprg.unibuf,
+					.buffer = mprg.vector_unibuf,
 					.offset = 0,
 					.size = unisz,
 				},
@@ -392,7 +442,7 @@ int main(int argc, char** argv)
 		);
 		assert(pipeline_layout);
 
-		mprg.pipeline_vector = wgpuDeviceCreateRenderPipeline(
+		mprg.vector_pipeline = wgpuDeviceCreateRenderPipeline(
 			device,
 			&(WGPURenderPipelineDescriptor){
 				.layout = pipeline_layout,
@@ -507,19 +557,13 @@ int main(int argc, char** argv)
 
 			r_begin(R_MODE_VECTOR);
 			rv_quad(0,               0,                window->width/2, window->height/2, 0xff0000ff);
-			rv_quad(window->width/2, 0,                window->width/2, window->height/2, 0x00ff00ff);
-			rv_quad(0,               window->height/2, window->width/2, window->height/2, 0x0000ffff);
-			rv_quad(window->width/2, window->height/2, window->width/2, window->height/2, 0xffffffff);
-			//rv_quad(500, 200, 100, 300, 0xffffffff);
-			//rv_quad(200, 200, 100, 300, 0xffffffff);
+			rv_quad(window->width/2, 0,                window->width/2, window->height/2, 0xff00ff00);
 			r_end();
 
-
-			#if 0
 			r_begin(R_MODE_VECTOR);
-			rv_quad(0, 200, 100, 300, 0xffffffff);
+			rv_quad(0,               window->height/2, window->width/2, window->height/2, 0xffff0000);
+			rv_quad(window->width/2, window->height/2, window->width/2, window->height/2, 0xff00ffff);
 			r_end();
-			#endif
 
 			r_end_frame();
 
