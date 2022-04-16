@@ -17,6 +17,7 @@ enum {
 	R_MODE_VECTOR,
 };
 
+#if 0
 enum postproc_type {
 	PP_NONE = 1,
 	PP_GAUSS,
@@ -40,12 +41,15 @@ struct postproc_framebuf {
 struct postproc_framebufs {
 	struct postproc_framebuf bufs[MAX_POSTPROC_FRAMEBUFS];
 };
+#endif
 
 struct window {
 	int id;
 	int width;
 	int height;
+	#if 0
 	struct postproc_framebufs postproc_framebufs;
+	#endif
 };
 
 // Max Buffer Elements (element=quad)
