@@ -4,8 +4,10 @@
 #include <assert.h>
 
 #include "stb_ds.h"
+#include "sokol_time.h"
 #include "common.h"
 #include "gpudl.h"
+#include "fps.h"
 
 #include "embedded_resources.h"
 
@@ -567,6 +569,7 @@ static void wgpu_native_log_callback(WGPULogLevel level, const char* msg)
 
 int main(int argc, char** argv)
 {
+	stm_setup();
 	gpudl_init();
 
 	wgpuSetLogCallback(wgpu_native_log_callback);
@@ -834,6 +837,8 @@ int main(int argc, char** argv)
 		assert(pp->gauss_pipeline);
 	}
 
+	struct fps* fps = fps_new(60);
+
 	while (mprg.n_windows > 0) {
 		struct gpudl_event e;
 		while (gpudl_poll_event(&e)) {
@@ -904,6 +909,8 @@ int main(int argc, char** argv)
 			gpudl_render_end();
 		}
 		r_end_frames();
+
+		if (fps_frame(fps)) printf("fps: %.2f\n", fps->fps);
 	}
 
 	return EXIT_SUCCESS;
