@@ -1,4 +1,5 @@
 CFLAGS+=-O0 -g
+CFLAGS+=-Wall
 CFLAGS+=-std=gnu99
 LDLIBS+=-lX11 -lm
 

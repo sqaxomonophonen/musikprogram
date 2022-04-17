@@ -198,6 +198,7 @@ static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureVi
 
 		// cleanup
 		switch (pp->previous_type) {
+		case PP_NONE: break;
 		case PP_GAUSS: {
 			wgpuBindGroupDrop(ppw->fb[0].bind_group);
 			wgpuTextureViewDrop(ppw->fb[0].texture_view);
@@ -207,6 +208,7 @@ static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureVi
 
 		// create new per-window resources
 		switch (pp->type) {
+		case PP_NONE: break;
 		case PP_GAUSS: {
 			 WGPUTexture texture = wgpuDeviceCreateTexture(
 			 	mprg.device,
@@ -271,6 +273,7 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 	struct postproc_window* ppw = &r->window->ppw;
 
 	switch (pp->type) {
+	case PP_NONE: break;
 	case PP_GAUSS: {
 		struct ppgauss_uni u = {
 			.dst_dim = {ppw->width, ppw->height},

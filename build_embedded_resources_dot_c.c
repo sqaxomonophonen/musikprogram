@@ -59,7 +59,7 @@ static char** split_lines(char* s)
 
 static char** read_lines(const char* path)
 {
-	return split_lines(read_file(path, NULL));
+	return split_lines((char*)read_file(path, NULL));
 }
 
 static void inc_wgsl(const char* path)
@@ -150,16 +150,16 @@ static void add_binary(const char* path, const char* symbol)
 	int n = 0;
 	char str[78];
 	size_t remaining = sz;
-	char* p = data;
+	uint8_t* p = data;
 	while (remaining > 0) {
-		char c = *(p++);
+		uint8_t c = *(p++);
 		char str_add[4];
 		int n_add = 0;
 		n_add = 4;
 		str_add[0] = '\\';
 		str_add[1] = 'x';
-		str_add[2] = hex_digit((uint8_t)c>>4);
-		str_add[3] = hex_digit((uint8_t)c&0xf);
+		str_add[2] = hex_digit(c>>4);
+		str_add[3] = hex_digit(c&0xf);
 		if (n+n_add > sizeof(str)) binflush(str, &n);
 		assert((n+n_add) <= sizeof(str));
 		memcpy(str+n, str_add, n_add);
