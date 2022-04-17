@@ -4,11 +4,11 @@ struct vs_out {
 };
 
 struct uniforms {
-	dst_dim: vec2<u32>,
+	dst_dim: vec2<i32>,
 };
 @group(0) @binding(0) var<uniform> u: uniforms;
 
-#include "xymap.wgsl"
+#include "inc_xymap.wgsl"
 
 @stage(vertex)
 fn vs_main(

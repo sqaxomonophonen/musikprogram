@@ -1,5 +1,6 @@
 #define WGSLS \
-	WGSL("vector.wgsl", "shadersrc_vector")
+	WGSL("vector.wgsl",  "shadersrc_vector"   ) \
+	WGSL("ppgauss.wgsl", "shadersrc_ppgauss"  )
 
 #define FONTS \
 	FONT("Cousine-Regular.ttf", "fontdata_mono") \

@@ -28,16 +28,19 @@ extern int verbosity;
 union v2 {
 	float s[2];
 	struct { float x,y; };
+	struct { float u,v; };
 };
 
 union v3 {
 	float s[3];
 	struct { float x,y,z; };
+	struct { float r,g,b; };
 };
 
 union v4 {
 	float s[4];
 	struct { float x,y,z,w; };
+	struct { float r,g,b,a; };
 };
 
 static inline union v2 v2(float x, float y) { return (union v2) {.x=x, .y=y}; }
@@ -48,6 +51,8 @@ static inline float v2_len(union v2 a) { return sqrtf(v2_dot(a,a)); }
 static inline union v2 v2_scale(float scalar, union v2 a) { return v2(a.x*scalar, a.y*scalar); }
 static inline union v2 v2_unit(union v2 a) { return v2_scale(1.0f / v2_len(a), a); }
 static inline union v2 v2_normal(union v2 a) { return v2(a.y, -a.x); }
+
+static inline union v4 v4(float x, float y, float z, float w) { return (union v4) {.x=x, .y=y, .z=z, .w=w}; }
 
 static inline uint8_t f2u8(float value)
 {
