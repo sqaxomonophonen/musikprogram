@@ -64,6 +64,12 @@ fn vs_main(@builtin(vertex_index) i: u32) -> vs_out {
 	return out;
 }
 
+fn tonemap(rgba: vec4<f32>) -> vec4<f32> {
+	let x0 = rgba.xyz * 0.6;
+	let x1 = clamp((x0*(2.51*x0+0.03))/(x0*(2.43*x0+0.59)+0.14), vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 1.0, 1.0));
+	return vec4<f32>(x1, rgba.w);
+}
+
 #include "inc_rnd.wgsl"
 
 fn rvec(d: f32, theta: f32) -> vec2<f32> {
@@ -93,5 +99,5 @@ fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 		}
 		i0+=1;
 	}
-	return acc;
+	return tonemap(acc);
 }
