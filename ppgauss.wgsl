@@ -10,6 +10,7 @@ struct uniforms {
 	sigma: f32,
 	rstep: f32,
 	broken: f32,
+	intensity: f32,
 	n0: i32,
 	n1: i32,
 };
@@ -82,7 +83,7 @@ fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 	var acc = I * textureLoad(tex, vec2<i32>(in.xy), 0);
 	var i0 = 0;
 	var broken_rstep = u.rstep * (1.0 - u.broken);
-	var acc_scalar = (I / f32(u.n1)) * 0.5;
+	var acc_scalar = (I / f32(u.n1)) * u.intensity;
 	loop {
 		if (i0 >= u.n0) { break; }
 		var r = u.rstep * f32(i0) + rnd(in.xy, u.seed) * broken_rstep - broken_rstep*0.5;

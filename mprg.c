@@ -51,6 +51,7 @@ struct ppgauss_uni {
 	float sigma;
 	float rstep;
 	float broken;
+	float intensity;
 	int n0;
 	int n1;
 };
@@ -302,7 +303,8 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 			.seed = r->seed,
 			.sigma = 0.003f,
 			.rstep = 14.31f,
-			.broken = 0.0f,
+			.broken = 0.1f,
+			.intensity = 0.4f,
 			.n0 = 3,
 			.n1 = 4,
 		};
