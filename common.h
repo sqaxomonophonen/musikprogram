@@ -50,6 +50,10 @@ static inline union v2 v2_normal(union v2 a) { return v2(a.y, -a.x); }
 
 static inline union v4 v4(float x, float y, float z, float w) { return (union v4) {.x=x, .y=y, .z=z, .w=w}; }
 
+// pre-multiplied alpha color constructors
+static inline union v4 v4_additive(float r, float g, float b) { return (union v4) {.r=r, .g=g, .b=b, .a=0}; }
+static inline union v4 v4_alpha(float r, float g, float b, float a) { return (union v4) {.r=r*a, .g=g*a, .b=b*a, .a=a}; }
+
 static inline uint8_t f2u8(float value)
 {
 	int v = roundf(value * 255.0f);
