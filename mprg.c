@@ -9,8 +9,16 @@
 #include "gpudl.h"
 #include "fps.h"
 #include "pwr.h"
+#include "stb_rect_pack.h"
+#include "stb_truetype.h"
 
 #include "embedded_resources.h"
+
+// couldn't convince myself that dynamic atlas resizing is worth the trouble :)
+// having to flush early when the atlas overflows is bad enough, but dynamic
+// resizing requires HEURISTICS AND SHIT!
+#define ATLAS_WIDTH  (2048)
+#define ATLAS_HEIGHT (2048)
 
 #define MAX_WINDOWS (16)
 
@@ -125,7 +133,42 @@ struct vector_vtx {
 	uint16_t a_color[4];
 };
 
-struct r {
+struct tile_atlas {
+	uint8_t*            bitmap;
+	WGPUTexture         texture;
+	WGPUTextureView     texture_view;
+	WGPUBindGroup       bind_group;
+	WGPURenderPipeline  pipeline;
+
+	stbrp_context ctx;
+	stbrp_rect* rects_arr;
+	stbrp_node* nodes;
+
+	int update;
+	int update_x0;
+	int update_y0;
+	int update_x1;
+	int update_y1;
+};
+
+struct r { // r for rrrender
+	WGPUDevice device;
+	WGPUQueue queue;
+
+	WGPUBuffer static_quad_idxbuf;
+	WGPUBuffer vtxbuf;
+
+	WGPUBuffer          draw_unibuf;
+
+	struct tile_atlas   tile_atlas;
+
+	WGPUBindGroup       vector_bind_group;
+	WGPURenderPipeline  vector_pipeline;
+
+	int vtxbuf_cursor;
+	uint8_t vtxbuf_data[VTXBUF_SZ];
+
+	struct postproc postproc;
 	int begun_frames;
 	int begun_frame;
 	int mode;
@@ -143,28 +186,7 @@ struct r {
 struct mprg {
 	int n_windows;
 	struct window windows[MAX_WINDOWS];
-
-	WGPUDevice device;
-	WGPUQueue queue;
-
-	WGPUBuffer static_quad_idxbuf;
-	WGPUBuffer vtxbuf;
-
-	int vtxbuf_cursor;
-	uint8_t vtxbuf_data[VTXBUF_SZ];
-
 	struct r r;
-
-	WGPUBuffer          draw_unibuf;
-
-	WGPUBindGroupLayout tile_bind_group_layout;
-	WGPUBindGroup       tile_bind_group;
-	WGPURenderPipeline  tile_pipeline;
-
-	WGPUBindGroup       vector_bind_group;
-	WGPURenderPipeline  vector_pipeline;
-
-	struct postproc postproc;
 } mprg;
 
 static void new_window()
@@ -199,7 +221,7 @@ static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
 
 static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureView swap_chain_texture_view)
 {
-	struct postproc* pp = &mprg.postproc;
+	struct postproc* pp = &mprg.r.postproc;
 	struct postproc_window* ppw = &window->ppw;
 	ppw->swap_chain_texture_view = swap_chain_texture_view;
 
@@ -226,8 +248,8 @@ static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureVi
 		switch (pp->type) {
 		case PP_NONE: break;
 		case PP_GAUSS: {
-			 WGPUTexture texture = wgpuDeviceCreateTexture(
-			 	mprg.device,
+			WGPUTexture texture = wgpuDeviceCreateTexture(
+				mprg.r.device,
 				&(WGPUTextureDescriptor) {
 					.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment,
 					.dimension = WGPUTextureDimension_2D,
@@ -249,7 +271,7 @@ static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureVi
 			ppw->fb[0].texture_view = view;
 
 			WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(
-				mprg.device,
+				mprg.r.device,
 				&(WGPUBindGroupDescriptor){
 					.layout = pp->gauss_bind_group_layout,
 					.entryCount = 3,
@@ -289,7 +311,7 @@ static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureVi
 static void postproc_end_frame(WGPUCommandEncoder encoder)
 {
 	struct r* r = &mprg.r;
-	struct postproc* pp = &mprg.postproc;
+	struct postproc* pp = &r->postproc;
 	struct postproc_window* ppw = &r->window->ppw;
 
 	switch (pp->type) {
@@ -307,7 +329,7 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 			.n1 = 4,
 		};
 
-		wgpuQueueWriteBuffer(mprg.queue, pp->gauss_unibuf, 0, &u, sizeof u);
+		wgpuQueueWriteBuffer(r->queue, pp->gauss_unibuf, 0, &u, sizeof u);
 
 		assert(ppw->swap_chain_texture_view);
 		WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(
@@ -347,8 +369,8 @@ static void r_flush(int flags)
 	assert(((flags == FF_END_PASS) || (flags == FF_END_FRAME) || ((flags&FF_VTXBUF_OVERFLOW) || (flags&FF_IDXBUF_OVERFLOW))) && "invalid r_flush() flags");
 
 	struct r* r = &mprg.r;
-	assert(mprg.vtxbuf_cursor >= r->cursor0);
-	const int n = (mprg.vtxbuf_cursor - r->cursor0);
+	assert(r->vtxbuf_cursor >= r->cursor0);
+	const int n = (r->vtxbuf_cursor - r->cursor0);
 
 	const int is_end_pass         = flags & FF_END_PASS;
 	const int is_end_frame        = flags & FF_END_FRAME;
@@ -361,7 +383,7 @@ static void r_flush(int flags)
 	const int do_submit = is_end_frame || is_vtxbuf_overflow;
 
 	if (r->encoder == NULL) {
-		r->encoder = wgpuDeviceCreateCommandEncoder(mprg.device, &(WGPUCommandEncoderDescriptor){});
+		r->encoder = wgpuDeviceCreateCommandEncoder(r->device, &(WGPUCommandEncoderDescriptor){});
 		assert(r->encoder != NULL);
 	}
 
@@ -392,11 +414,11 @@ static void r_flush(int flags)
 		assert(r->bind_group != NULL);
 		wgpuRenderPassEncoderSetBindGroup(pass, 0, r->bind_group, 0, 0);
 
-		wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mprg.vtxbuf, r->cursor0, n);
+		wgpuRenderPassEncoderSetVertexBuffer(pass, 0, r->vtxbuf, r->cursor0, n);
 
 		wgpuRenderPassEncoderSetIndexBuffer(
 			pass,
-			mprg.static_quad_idxbuf,
+			r->static_quad_idxbuf,
 			WGPUIndexFormat_Uint16,
 			0,
 			sizeof(uint16_t)*r->n_static_quad_indices);
@@ -404,7 +426,7 @@ static void r_flush(int flags)
 
 		wgpuRenderPassEncoderEnd(pass);
 		r->n_passes++;
-		r->cursor0 = mprg.vtxbuf_cursor;
+		r->cursor0 = r->vtxbuf_cursor;
 		r->n_static_quad_indices = 0;
 	}
 
@@ -416,18 +438,18 @@ static void r_flush(int flags)
 		// the entire vertex buffer just before submitting the queue.
 		// if this is not the case, do wgpuQueueWriteBuffer() with
 		// appropriate offset before setting the vertex buffer?
-		if (mprg.vtxbuf_cursor > 0) {
-			wgpuQueueWriteBuffer(mprg.queue, mprg.vtxbuf, 0, &mprg.vtxbuf_data, mprg.vtxbuf_cursor);
-			mprg.vtxbuf_cursor = 0;
+		if (r->vtxbuf_cursor > 0) {
+			wgpuQueueWriteBuffer(r->queue, r->vtxbuf, 0, &r->vtxbuf_data, r->vtxbuf_cursor);
+			r->vtxbuf_cursor = 0;
 		}
-		assert(mprg.vtxbuf_cursor == 0);
+		assert(r->vtxbuf_cursor == 0);
 
 		if (is_end_frame) {
 			postproc_end_frame(r->encoder);
 		}
 
 		WGPUCommandBuffer cmdbuf = wgpuCommandEncoderFinish(r->encoder, &(WGPUCommandBufferDescriptor){});
-		wgpuQueueSubmit(mprg.queue, 1, &cmdbuf);
+		wgpuQueueSubmit(r->queue, 1, &cmdbuf);
 		r->encoder = NULL;
 	}
 }
@@ -448,7 +470,7 @@ static void r_end_frames()
 	// window-local resources when postproc type changes. since
 	// type!=previous_type is used to detect these changes, we can't update
 	// previous_type until ALL windows have been rendered
-	struct postproc* pp = &mprg.postproc;
+	struct postproc* pp = &r->postproc;
 	pp->previous_type = pp->type;
 
 	r->begun_frames = 0;
@@ -466,14 +488,14 @@ static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_text
 	window_update_size(window);
 
 	assert((r->window == NULL) && "frame already begun");
-	assert(mprg.vtxbuf_cursor == 0);
+	assert(r->vtxbuf_cursor == 0);
 
 	r->n_passes = 0;
 	assert(r->n_static_quad_indices == 0);
 	r->window = window;
 	r->render_target_texture_view = postproc_begin_frame(window, swap_chain_texture_view);
 
-	enum postproc_type t = mprg.postproc.type;
+	enum postproc_type t = r->postproc.type;
 	const float scalar =
 		t == PP_NONE ? 16.0f :
 		t == PP_GAUSS ? 1.0f :
@@ -485,7 +507,7 @@ static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_text
 		.seed = r->seed,
 		.scalar = scalar,
 	};
-	wgpuQueueWriteBuffer(mprg.queue, mprg.draw_unibuf, 0, &u, sizeof u);
+	wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
 
 	r->begun_frame = 1;
 }
@@ -509,13 +531,13 @@ static void r_begin(int mode)
 
 	switch (mode) {
 	case R_MODE_VECTOR:
-		r->pipeline = mprg.vector_pipeline;
-		r->bind_group = mprg.vector_bind_group;
+		r->pipeline = r->vector_pipeline;
+		r->bind_group = r->vector_bind_group;
 		break;
 	default: assert(!"unhandled mode");
 	}
 
-	r->cursor0 = mprg.vtxbuf_cursor;
+	r->cursor0 = r->vtxbuf_cursor;
 	r->mode = mode;
 }
 
@@ -531,7 +553,7 @@ static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 {
 	assert(((vtxbuf_requested&3) == 0) && "vtxbuf_requested must be 4-byte aligned");
 	struct r* r = &mprg.r;
-	const int vtxbuf_required = mprg.vtxbuf_cursor + vtxbuf_requested;
+	const int vtxbuf_required = r->vtxbuf_cursor + vtxbuf_requested;
 	const int idxbuf_required = r->n_static_quad_indices + idxbuf_requested;
 	const int vtxbuf_overflow = (vtxbuf_required > VTXBUF_SZ);
 	const int idxbuf_overflow = (idxbuf_required > STATIC_QUADS_IDXBUF_SZ);
@@ -539,12 +561,12 @@ static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 		  (vtxbuf_overflow ? FF_VTXBUF_OVERFLOW : 0)
 		+ (idxbuf_overflow ? FF_IDXBUF_OVERFLOW : 0);
 	if (ff) r_flush(ff);
-	assert((mprg.vtxbuf_cursor + vtxbuf_requested) <= VTXBUF_SZ);
+	assert((r->vtxbuf_cursor + vtxbuf_requested) <= VTXBUF_SZ);
 	assert((r->n_static_quad_indices + idxbuf_requested ) <= STATIC_QUADS_IDXBUF_SZ);
 
-	void* p = mprg.vtxbuf_data + mprg.vtxbuf_cursor;
-	mprg.vtxbuf_cursor += vtxbuf_requested;
-	assert((mprg.vtxbuf_cursor&3) == 0);
+	void* p = r->vtxbuf_data + r->vtxbuf_cursor;
+	r->vtxbuf_cursor += vtxbuf_requested;
+	assert((r->vtxbuf_cursor&3) == 0);
 
 	r->n_static_quad_indices += idxbuf_requested;
 
@@ -637,8 +659,8 @@ int main(int argc, char** argv)
 	WGPUDevice device;
 	WGPUQueue queue;
 	gpudl_get_wgpu(NULL, &adapter, &device, &queue);
-	mprg.device = device;
-	mprg.queue = queue;
+	mprg.r.device = device;
+	mprg.r.queue = queue;
 
 #if 1
         WGPUAdapterProperties properties = {0};
@@ -685,18 +707,18 @@ int main(int argc, char** argv)
         #undef DUMP32
         #endif
 
-	mprg.postproc.type = PP_GAUSS;
+	mprg.r.postproc.type = PP_GAUSS;
 
 	{
 		// prepare "static quads index buffer"; see
 		// STATIC_QUADS_IDXBUF_SZ comment
 		uint16_t indices[STATIC_QUADS_IDXBUF_SZ];
 		size_t size = sizeof(indices[0])*STATIC_QUADS_IDXBUF_SZ;
-		mprg.static_quad_idxbuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
+		mprg.r.static_quad_idxbuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
 			.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
 			.size = size,
 		});
-		assert(mprg.static_quad_idxbuf);
+		assert(mprg.r.static_quad_idxbuf);
 		int offset = 0;
 		for (int i = 0; i < STATIC_QUADS_IDXBUF_SZ; i += 6, offset += 4) {
 			assert(0 <= offset && offset <= (65536-4));
@@ -707,15 +729,15 @@ int main(int argc, char** argv)
 			indices[i+4] = offset+2;
 			indices[i+5] = offset+3;
 		}
-		wgpuQueueWriteBuffer(queue, mprg.static_quad_idxbuf, 0, indices, size);
+		wgpuQueueWriteBuffer(queue, mprg.r.static_quad_idxbuf, 0, indices, size);
 	}
 
 	// prepare dynamic vertex buffer
-	mprg.vtxbuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
+	mprg.r.vtxbuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
 		.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
-		.size = sizeof(mprg.vtxbuf_data),
+		.size = sizeof(mprg.r.vtxbuf_data),
 	});
-	assert(mprg.vtxbuf);
+	assert(mprg.r.vtxbuf);
 	//printf("vtxbuf is %zd bytes\n", sizeof(mprg.vtxbuf_data));
 
 	// Pre-multiplied alpha:
@@ -737,21 +759,45 @@ int main(int argc, char** argv)
 
 	// R_*
 	{
-		mprg.draw_unibuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
+		mprg.r.draw_unibuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
 			.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
 			.size = sizeof(struct draw_uni),
 		});
-		assert(mprg.draw_unibuf);
+		assert(mprg.r.draw_unibuf);
 
 	}
 
 	// R_MODE_TILE
 	{
+		struct tile_atlas* a = &mprg.r.tile_atlas;
+
+		a->bitmap = calloc(ATLAS_WIDTH*ATLAS_HEIGHT, sizeof *a->bitmap);
+
+		a->texture = wgpuDeviceCreateTexture(
+			mprg.r.device,
+			&(WGPUTextureDescriptor) {
+				.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
+				.dimension = WGPUTextureDimension_2D,
+				.size = (WGPUExtent3D){
+					.width = ATLAS_WIDTH,
+					.height = ATLAS_HEIGHT,
+					.depthOrArrayLayers = 1,
+				},
+				.mipLevelCount = 1,
+				.sampleCount = 1,
+				.format = WGPUTextureFormat_R8Unorm,
+			}
+		);
+		assert(a->texture);
+
+		a->texture_view = wgpuTextureCreateView(a->texture, &(WGPUTextureViewDescriptor) {});
+		assert(a->texture_view);
+
 		const size_t unisz = sizeof(struct draw_uni);
 
 		WGPUShaderModule shader = mk_shader_module(device, shadersrc_tile);
 
-		mprg.tile_bind_group_layout = wgpuDeviceCreateBindGroupLayout(
+		WGPUBindGroupLayout bind_group_layout = wgpuDeviceCreateBindGroupLayout(
 			device,
 			&(WGPUBindGroupLayoutDescriptor){
 				.entryCount = 2,
@@ -777,20 +823,38 @@ int main(int argc, char** argv)
 				},
 			}
 		);
-		assert(mprg.tile_bind_group_layout);
+		assert(bind_group_layout);
+
+		a->bind_group = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
+			.layout = bind_group_layout,
+			.entryCount = 2,
+			.entries = (WGPUBindGroupEntry[]){
+				(WGPUBindGroupEntry){
+					.binding = 0,
+					.buffer = mprg.r.draw_unibuf,
+					.offset = 0,
+					.size = unisz,
+				},
+				(WGPUBindGroupEntry){
+					.binding = 1,
+					.textureView = a->texture_view,
+				},
+			},
+		});
+		assert(a->bind_group);
 
 		WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(
 			device,
 			&(WGPUPipelineLayoutDescriptor){
 				.bindGroupLayoutCount = 1,
 				.bindGroupLayouts = (WGPUBindGroupLayout[]){
-					mprg.tile_bind_group_layout,
+					bind_group_layout,
 				},
 			}
 		);
 		assert(pipeline_layout);
 
-		mprg.tile_pipeline = wgpuDeviceCreateRenderPipeline(
+		a->pipeline = wgpuDeviceCreateRenderPipeline(
 			device,
 			&(WGPURenderPipelineDescriptor){
 				.layout = pipeline_layout,
@@ -874,13 +938,13 @@ int main(int argc, char** argv)
 		);
 		assert(bind_group_layout);
 
-		mprg.vector_bind_group = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
+		mprg.r.vector_bind_group = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
 			.layout = bind_group_layout,
 			.entryCount = 1,
 			.entries = (WGPUBindGroupEntry[]){
 				(WGPUBindGroupEntry){
 					.binding = 0,
-					.buffer = mprg.draw_unibuf,
+					.buffer = mprg.r.draw_unibuf,
 					.offset = 0,
 					.size = unisz,
 				},
@@ -898,7 +962,7 @@ int main(int argc, char** argv)
 		);
 		assert(pipeline_layout);
 
-		mprg.vector_pipeline = wgpuDeviceCreateRenderPipeline(
+		mprg.r.vector_pipeline = wgpuDeviceCreateRenderPipeline(
 			device,
 			&(WGPURenderPipelineDescriptor){
 				.layout = pipeline_layout,
@@ -953,7 +1017,7 @@ int main(int argc, char** argv)
 
 	// PP_GAUSS
 	{
-		struct postproc* pp = &mprg.postproc;
+		struct postproc* pp = &mprg.r.postproc;
 
 		const size_t unisz = sizeof(struct ppgauss_uni);
 
@@ -1000,7 +1064,7 @@ int main(int argc, char** argv)
 		);
 		assert(pp->gauss_bind_group_layout);
 
-		pp->gauss_sampler = wgpuDeviceCreateSampler(mprg.device, &(WGPUSamplerDescriptor) {
+		pp->gauss_sampler = wgpuDeviceCreateSampler(mprg.r.device, &(WGPUSamplerDescriptor) {
 			.addressModeU = WGPUAddressMode_ClampToEdge,
 			.addressModeV = WGPUAddressMode_ClampToEdge,
 			.addressModeW = WGPUAddressMode_ClampToEdge,
@@ -1100,10 +1164,10 @@ int main(int argc, char** argv)
 				if (e.key.pressed) {
 					if (e.key.code == '\033') do_close = 1;
 					if (e.key.code == 'p') {
-						if (mprg.postproc.type == PP_GAUSS) {
-							mprg.postproc.type = PP_NONE;
+						if (mprg.r.postproc.type == PP_GAUSS) {
+							mprg.r.postproc.type = PP_NONE;
 						} else {
-							mprg.postproc.type = PP_GAUSS;
+							mprg.r.postproc.type = PP_GAUSS;
 						}
 					}
 					if (e.key.code == GK_UP) imax++;
@@ -1176,8 +1240,8 @@ int main(int argc, char** argv)
 
 			{
 				const float S = 50;
-				rv_quad(window->width/2-S, 0, S*2, window->height, v4(0.5,0,0,0));
-				rv_quad(0, window->height/2-S, window->width, S*2, v4(0,0.25,0,0.5));
+				rv_quad(window->width/2-S, 0, S*2, window->height, v4(1.5,0,0,0));
+				rv_quad(0, window->height/2-S, window->width, S*2, v4(0,0,2,0.9));
 
 			}
 
