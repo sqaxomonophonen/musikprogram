@@ -76,14 +76,13 @@ fn rvec(d: f32, theta: f32) -> vec2<f32> {
 	return vec2<f32>(d*sin(theta), d*cos(theta));
 }
 
-fn intensity_scale() -> f32 { return 16.0; }
-
 @stage(fragment)
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
-	var acc = intensity_scale() * textureLoad(tex, vec2<i32>(in.xy), 0);
+	let I = 16.0;
+	var acc = I * textureLoad(tex, vec2<i32>(in.xy), 0);
 	var i0 = 0;
 	var broken_rstep = u.rstep * (1.0 - u.broken);
-	var acc_scalar = (intensity_scale() / f32(u.n1)) * 0.5;
+	var acc_scalar = (I / f32(u.n1)) * 0.5;
 	loop {
 		if (i0 >= u.n0) { break; }
 		var r = u.rstep * f32(i0) + rnd(in.xy, u.seed) * broken_rstep - broken_rstep*0.5;
