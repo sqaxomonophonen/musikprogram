@@ -4,7 +4,8 @@ struct vs_out {
 };
 
 struct uniforms {
-	dst_dim: vec2<f32>,
+	width: f32,
+	height: f32,
 	seed: f32,
 	sigma: f32,
 	rstep: f32,
@@ -17,6 +18,8 @@ struct uniforms {
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var smpl: sampler;
 
+fn dst_dim() -> vec2<f32> { return vec2<f32>(u.width, u.height); }
+
 @stage(vertex)
 fn vs_main(@builtin(vertex_index) i: u32) -> vs_out {
 
@@ -25,8 +28,8 @@ fn vs_main(@builtin(vertex_index) i: u32) -> vs_out {
 	var p2  = vec2<f32>( 1.0, -1.0);
 	var p3  = vec2<f32>(-1.0, -1.0);
 
-	var w = i32(u.dst_dim.x);
-	var h = i32(u.dst_dim.y);
+	var w = i32(u.width);
+	var h = i32(u.height);
 	var xy0 = vec2<i32>( 0,  0 );
 	var xy1 = vec2<i32>( w,  0 );
 	var xy2 = vec2<i32>( w,  h );
@@ -67,23 +70,24 @@ fn rvec(d: f32, theta: f32) -> vec2<f32> {
 	return vec2<f32>(d*sin(theta), d*cos(theta));
 }
 
+fn intensity_scale() -> f32 { return 16.0; }
+
 @stage(fragment)
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
-	var acc = textureLoad(tex, vec2<i32>(in.xy), 0);
-	var diminish = f32(0.0);
-	var intensity = 0.40 * (1.0 - diminish * 0.3);
-	var i0 = i32(0);
+	var acc = intensity_scale() * textureLoad(tex, vec2<i32>(in.xy), 0);
+	var i0 = 0;
 	var broken_rstep = u.rstep * (1.0 - u.broken);
+	var acc_scalar = (intensity_scale() / f32(u.n1)) * 0.5;
 	loop {
 		if (i0 >= u.n0) { break; }
-		var r = rnd(in.xy, u.seed) * broken_rstep - broken_rstep*0.5;
-		var scalar = (exp(-(r*r*u.sigma)) / f32(u.n1));
+		var r = u.rstep * f32(i0) + rnd(in.xy, u.seed) * broken_rstep - broken_rstep*0.5;
+		var scalar = exp(-(r*r*u.sigma)) * acc_scalar;
 		var i1 = i32(0);
 		loop {
 			if (i1 >= u.n1) { break; }
 			i1+=1;
 			var rtheta = rnd(in.xy, u.seed+f32(i1))*6.2830;
-			var uv = (in.xy + rvec(r, rtheta)) / u.dst_dim;
+			var uv = (in.xy + rvec(r, rtheta)) / vec2<f32>(u.width, u.height);
 			acc += textureSample(tex, smpl, uv) * scalar;
 
 		}

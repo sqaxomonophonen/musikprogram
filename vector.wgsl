@@ -5,6 +5,8 @@ struct vs_out {
 
 struct uniforms {
 	dst_dim: vec2<i32>,
+	seed: f32,
+	scalar: f32,
 };
 @group(0) @binding(0) var<uniform> u: uniforms;
 
@@ -23,5 +25,5 @@ fn vs_main(
 
 @stage(fragment)
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
-	return in.rgba;
+	return in.rgba * vec4<f32>(u.scalar, u.scalar, u.scalar, 1.0);
 }

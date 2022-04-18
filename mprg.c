@@ -42,7 +42,8 @@ enum {
 };
 
 struct ppgauss_uni {
-	float dst_dim[2];
+	float width;
+	float height;
 	float seed;
 	float sigma;
 	float rstep;
@@ -62,6 +63,8 @@ enum postproc_type {
 struct postproc {
 	enum postproc_type previous_type;
 	enum postproc_type type;
+
+	float scalar;
 
 	WGPUBuffer           gauss_unibuf;
 	WGPUBindGroupLayout  gauss_bind_group_layout;
@@ -121,6 +124,8 @@ struct vector_vtx {
 
 struct vector_uni {
 	int dst_dim[2];
+	float seed;
+	float scalar;
 };
 
 struct r {
@@ -289,10 +294,12 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 	case PP_NONE: break;
 	case PP_GAUSS: {
 		struct ppgauss_uni u = {
-			.dst_dim = {ppw->width, ppw->height},
+			//.dst_dim = {ppw->width, ppw->height},
+			.width = ppw->width,
+			.height = ppw->height,
 			.seed = r->seed,
-			.sigma = 0.0005f,
-			.rstep = 54.31f,
+			.sigma = 0.003f,
+			.rstep = 14.31f,
 			.broken = 0.0f,
 			.n0 = 3,
 			.n1 = 4,
@@ -444,7 +451,7 @@ static void r_end_frames()
 
 	r->begun_frames = 0;
 
-	r->seed = fmodf(r->seed + 0.017f, 11.11f);
+	r->seed = fmodf(r->seed + 0.1f, 11.11f);
 }
 
 static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_texture_view)
@@ -464,6 +471,12 @@ static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_text
 	r->window = window;
 	r->render_target_texture_view = postproc_begin_frame(window, swap_chain_texture_view);
 
+	enum postproc_type t = mprg.postproc.type;
+	const float scalar =
+		t == PP_NONE ? 16.0f :
+		t == PP_GAUSS ? 1.0f :
+		0.0f;
+
 	// write all uniform buffers;
 	//  - optimistically assuming that all uniform buffers are probably
 	//    going to be used...
@@ -476,6 +489,8 @@ static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_text
 	{
 		struct vector_uni u = {
 			.dst_dim = { window->width, window->height },
+			.seed = r->seed,
+			.scalar = scalar,
 		};
 		wgpuQueueWriteBuffer(mprg.queue, mprg.vector_unibuf, 0, &u, sizeof u);
 	}
@@ -544,14 +559,20 @@ static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 	return p;
 }
 
-static void unorm16x4_from_v4(uint16_t* dst, union v4 rgba)
+static uint16_t fto16(float v)
 {
-	for (int i = 0; i < 4; i++) {
-		float v = rgba.s[i];
-		if (v < 0.0f) v = 0.0f;
-		if (v > 1.0f) v = 1.0f;
-		dst[i] = (uint16_t)roundf(v * 65535.0f);
-	}
+	if (v < 0.0f) v = 0.0f;
+	if (v > 1.0f) v = 1.0f;
+	return roundf(v * 65535.0f);
+}
+
+static void colpak(uint16_t* dst, union v4 rgba)
+{
+	const float s = 1.0f / 16.0f;
+	dst[0] = fto16(rgba.s[0] * s);
+	dst[1] = fto16(rgba.s[1] * s);
+	dst[2] = fto16(rgba.s[2] * s);
+	dst[3] = fto16(rgba.s[3]);
 }
 
 static void rv_quad(float x, float y, float w, float h, union v4 color)
@@ -560,19 +581,40 @@ static void rv_quad(float x, float y, float w, float h, union v4 color)
 
 	pv[0].a_pos.x = x;
 	pv[0].a_pos.y = y;
-	unorm16x4_from_v4(pv[0].a_color, color);
+	colpak(pv[0].a_color, color);
 
 	pv[1].a_pos.x = x+w;
 	pv[1].a_pos.y = y;
-	unorm16x4_from_v4(pv[1].a_color, color);
+	colpak(pv[1].a_color, color);
 
 	pv[2].a_pos.x = x+w;
 	pv[2].a_pos.y = y+h;
-	unorm16x4_from_v4(pv[2].a_color, color);
+	colpak(pv[2].a_color, color);
 
 	pv[3].a_pos.x = x;
 	pv[3].a_pos.y = y+h;
-	unorm16x4_from_v4(pv[3].a_color, color);
+	colpak(pv[3].a_color, color);
+}
+
+static void rv_quad_ygrad(float x, float y, float w, float h, union v4 color0, union v4 color1)
+{
+	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
+
+	pv[0].a_pos.x = x;
+	pv[0].a_pos.y = y;
+	colpak(pv[0].a_color, color0);
+
+	pv[1].a_pos.x = x+w;
+	pv[1].a_pos.y = y;
+	colpak(pv[1].a_color, color0);
+
+	pv[2].a_pos.x = x+w;
+	pv[2].a_pos.y = y+h;
+	colpak(pv[2].a_color, color1);
+
+	pv[3].a_pos.x = x;
+	pv[3].a_pos.y = y+h;
+	colpak(pv[3].a_color, color1);
 }
 
 static void wgpu_native_log_callback(WGPULogLevel level, const char* msg)
@@ -605,6 +647,51 @@ int main(int argc, char** argv)
 	gpudl_get_wgpu(NULL, &adapter, &device, &queue);
 	mprg.device = device;
 	mprg.queue = queue;
+
+#if 1
+        WGPUAdapterProperties properties = {0};
+        wgpuAdapterGetProperties(adapter, &properties);
+        printf("vendor id: %d\n", properties.vendorID);
+        printf("device id: %d\n", properties.deviceID);
+        printf("adapter type: %d\n", properties.adapterType);
+        printf("backend type: %d\n", properties.backendType);
+        //printf("name: %s\n", properties.name);
+        //printf("driver: %s\n", properties.driverDescription);
+
+        WGPUSupportedLimits limits = {0};
+        wgpuAdapterGetLimits(adapter, &limits);
+
+        #define DUMP32(s) printf("  " #s ": %u\n", limits.limits.s);
+        #define DUMP64(s) printf("  " #s ": %lu\n", limits.limits.s);
+        DUMP32(maxTextureDimension1D)
+        DUMP32(maxTextureDimension2D)
+        DUMP32(maxTextureDimension3D)
+        DUMP32(maxTextureArrayLayers)
+        DUMP32(maxBindGroups)
+        DUMP32(maxDynamicUniformBuffersPerPipelineLayout)
+        DUMP32(maxDynamicStorageBuffersPerPipelineLayout)
+        DUMP32(maxSampledTexturesPerShaderStage)
+        DUMP32(maxSamplersPerShaderStage)
+        DUMP32(maxStorageBuffersPerShaderStage)
+        DUMP32(maxStorageTexturesPerShaderStage)
+        DUMP32(maxUniformBuffersPerShaderStage)
+        DUMP64(maxUniformBufferBindingSize)
+        DUMP64(maxStorageBufferBindingSize)
+        DUMP32(minUniformBufferOffsetAlignment)
+        DUMP32(minStorageBufferOffsetAlignment)
+        DUMP32(maxVertexBuffers)
+        DUMP32(maxVertexAttributes)
+        DUMP32(maxVertexBufferArrayStride)
+        DUMP32(maxInterStageShaderComponents)
+        DUMP32(maxComputeWorkgroupStorageSize)
+        DUMP32(maxComputeInvocationsPerWorkgroup)
+        DUMP32(maxComputeWorkgroupSizeX)
+        DUMP32(maxComputeWorkgroupSizeY)
+        DUMP32(maxComputeWorkgroupSizeZ)
+        DUMP32(maxComputeWorkgroupsPerDimension)
+        #undef DUMP64
+        #undef DUMP32
+        #endif
 
 	mprg.postproc.type = PP_GAUSS;
 
@@ -658,7 +745,7 @@ int main(int argc, char** argv)
 				.entries = (WGPUBindGroupLayoutEntry[]){
 					(WGPUBindGroupLayoutEntry){
 						.binding = 0,
-						.visibility = WGPUShaderStage_Vertex,
+						.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
 						.buffer = (WGPUBufferBindingLayout){
 							.type = WGPUBufferBindingType_Uniform,
 							.hasDynamicOffset = false,
@@ -878,6 +965,7 @@ int main(int argc, char** argv)
 
 	struct fps* fps = fps_new(60);
 
+	int imax = 16;
 	while (mprg.n_windows > 0) {
 		struct gpudl_event e;
 		while (gpudl_poll_event(&e)) {
@@ -909,6 +997,11 @@ int main(int argc, char** argv)
 							mprg.postproc.type = PP_GAUSS;
 						}
 					}
+					if (e.key.code == GK_UP) imax++;
+					if (e.key.code == GK_DOWN) imax--;
+					if (imax < 0) imax = 0;
+					if (imax > 16) imax = 16;
+
 				}
 				break;
 			default:
@@ -935,22 +1028,42 @@ int main(int argc, char** argv)
 
 			r_begin_frame(window, v);
 
-			#if 0
 			r_begin(R_MODE_VECTOR);
-			rv_quad(0,               0,                window->width/2, window->height/2, v4(1,0,0,1));
-			rv_quad(window->width/2, 0,                window->width/2, window->height/2, v4(0,1,0,1));
-			r_end();
 
-			r_begin(R_MODE_VECTOR);
-			rv_quad(0,               window->height/2, window->width/2, window->height/2, v4(0,0,1,1));
-			rv_quad(window->width/2, window->height/2, window->width/2, window->height/2, v4(1,1,0,1));
+			const float m1 = imax;;
+			{
+				int x0 = 200;
+				int inc = 200;
+				const float m0 = 1;
+				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m0,m0,1), v4(0,0,0,0));
+				x0 += inc;
+				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m0,m1,m0,1), v4(0,0,0,0));
+				x0 += inc;
+				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m0,m0,m1,1), v4(0,0,0,0));
+				x0 += inc;
+				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m0,m1,m1,1), v4(0,0,0,0));
+				x0 += inc;
+				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m0,m1,1), v4(0,0,0,0));
+				x0 += inc;
+				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m1,m0,1), v4(0,0,0,0));
+				x0 += inc;
+				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m1,m1,1), v4(0,0,0,0));
+				x0 += inc;
+			}
+
+			{
+				int y = 0;
+				int inc = 10;
+				while (y < window->height) {
+					rv_quad(0, y, window->width, inc/5, v4(0,0,0,0));
+					y += inc;
+					inc += 10;
+				}
+			}
+
+			rv_quad_ygrad(80, 0, 5, window->height, v4(m1,m1,m1,1), v4(0,0,0,0));
+
 			r_end();
-			#else
-			r_begin(R_MODE_VECTOR);
-			rv_quad(500, 500, 200, 200, v4(1,1,0,1));
-			rv_quad(100, 500, 1, 200, v4(0,1,0,1));
-			r_end();
-			#endif
 
 			r_end_frame();
 
