@@ -42,6 +42,9 @@ enum {
 };
 
 struct ppgauss_uni {
+	// XXX other uniforms use `int dst_dim[2]`, but webgpu (?) requires
+	// that the uniform structure size has 8-byte alignment if any element
+	// is a "vec2" (and vec4 requires 16-byte alignment)
 	float width;
 	float height;
 	float seed;
@@ -294,7 +297,6 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 	case PP_NONE: break;
 	case PP_GAUSS: {
 		struct ppgauss_uni u = {
-			//.dst_dim = {ppw->width, ppw->height},
 			.width = ppw->width,
 			.height = ppw->height,
 			.seed = r->seed,
