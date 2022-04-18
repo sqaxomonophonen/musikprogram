@@ -37,7 +37,7 @@
 // 6 indices per 4 vertices, the size must be 65536*(6/4) (to "max it out")
 
 enum {
-	R_MODE_ATLAS = 1,
+	R_MODE_TILE = 1,
 	R_MODE_PLOT,
 	R_MODE_VECTOR,
 };
@@ -99,15 +99,10 @@ struct window {
 	struct postproc_window ppw;
 };
 
-struct atlas_vtx {
+struct tile_vtx {
 	union v2 a_pos;
 	union v2 a_uv;
 	uint32_t a_color;
-};
-
-struct atlas_uni {
-	int dst_dim[2];
-	// TODO
 };
 
 struct plot_vtx {
@@ -117,20 +112,17 @@ struct plot_vtx {
 	uint32_t a_color;
 };
 
-struct plot_uni {
-	int dst_dim[2];
-	// TODO
+// common for R_MODE_VECTOR/R_MODE_PLOT/R_MODE_TILE
+struct draw_uni {
+	float width;
+	float height;
+	float seed;
+	float scalar;
 };
 
 struct vector_vtx {
 	union v2 a_pos;
 	uint16_t a_color[4];
-};
-
-struct vector_uni {
-	int dst_dim[2];
-	float seed;
-	float scalar;
 };
 
 struct r {
@@ -163,9 +155,14 @@ struct mprg {
 
 	struct r r;
 
-	WGPUBuffer          vector_unibuf;
-	WGPURenderPipeline  vector_pipeline;
+	WGPUBuffer          draw_unibuf;
+
+	WGPUBindGroupLayout tile_bind_group_layout;
+	WGPUBindGroup       tile_bind_group;
+	WGPURenderPipeline  tile_pipeline;
+
 	WGPUBindGroup       vector_bind_group;
+	WGPURenderPipeline  vector_pipeline;
 
 	struct postproc postproc;
 } mprg;
@@ -482,23 +479,13 @@ static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_text
 		t == PP_GAUSS ? 1.0f :
 		0.0f;
 
-	// write all uniform buffers;
-	//  - optimistically assuming that all uniform buffers are probably
-	//    going to be used...
-	//  - if some buffers are NOT used, I'm assuming writes are cheap :-)
-	//  - contents are invariant ("uniform") for an entire frame, so this
-	//    is a good place to write uniforms; at the beginning of a "frame"
-	//  - since uniforms belong to a bind group it doesn't make a lot of
-	//    sense to do "intra-frame uniform buffer writes" anyway?
-
-	{
-		struct vector_uni u = {
-			.dst_dim = { window->width, window->height },
-			.seed = r->seed,
-			.scalar = scalar,
-		};
-		wgpuQueueWriteBuffer(mprg.queue, mprg.vector_unibuf, 0, &u, sizeof u);
-	}
+	struct draw_uni u = {
+		.width = window->width,
+		.height = window->height,
+		.seed = r->seed,
+		.scalar = scalar,
+	};
+	wgpuQueueWriteBuffer(mprg.queue, mprg.draw_unibuf, 0, &u, sizeof u);
 
 	r->begun_frame = 1;
 }
@@ -731,15 +718,140 @@ int main(int argc, char** argv)
 	assert(mprg.vtxbuf);
 	//printf("vtxbuf is %zd bytes\n", sizeof(mprg.vtxbuf_data));
 
+	// Pre-multiplied alpha:
+	//   output = src + (1 - src.alpha) * dst
+	// For additive blending, set alpha to zero, and color as-is
+	// For alpha blending, set color to color*alpha, and alpha as-is
+	const WGPUBlendState* premultiplied_alpha_blend_state = &(WGPUBlendState) {
+		.color = (WGPUBlendComponent){
+			.srcFactor = WGPUBlendFactor_One,
+			.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+			.operation = WGPUBlendOperation_Add,
+		},
+		.alpha = (WGPUBlendComponent){
+			.srcFactor = WGPUBlendFactor_One,
+			.dstFactor = WGPUBlendFactor_Zero,
+			.operation = WGPUBlendOperation_Add,
+		}
+	};
+
+	// R_*
+	{
+		mprg.draw_unibuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
+			.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+			.size = sizeof(struct draw_uni),
+		});
+		assert(mprg.draw_unibuf);
+
+	}
+
+	// R_MODE_TILE
+	{
+		const size_t unisz = sizeof(struct draw_uni);
+
+		WGPUShaderModule shader = mk_shader_module(device, shadersrc_tile);
+
+		mprg.tile_bind_group_layout = wgpuDeviceCreateBindGroupLayout(
+			device,
+			&(WGPUBindGroupLayoutDescriptor){
+				.entryCount = 2,
+				.entries = (WGPUBindGroupLayoutEntry[]){
+					(WGPUBindGroupLayoutEntry){
+						.binding = 0,
+						.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
+						.buffer = (WGPUBufferBindingLayout){
+							.type = WGPUBufferBindingType_Uniform,
+							.hasDynamicOffset = false,
+							.minBindingSize = unisz,
+						},
+					},
+					(WGPUBindGroupLayoutEntry){
+						.binding = 1,
+						.visibility = WGPUShaderStage_Fragment,
+						.texture = (WGPUTextureBindingLayout){
+							.sampleType = WGPUTextureSampleType_Float,
+							.viewDimension = WGPUTextureViewDimension_2D,
+							.multisampled = false,
+						},
+					},
+				},
+			}
+		);
+		assert(mprg.tile_bind_group_layout);
+
+		WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(
+			device,
+			&(WGPUPipelineLayoutDescriptor){
+				.bindGroupLayoutCount = 1,
+				.bindGroupLayouts = (WGPUBindGroupLayout[]){
+					mprg.tile_bind_group_layout,
+				},
+			}
+		);
+		assert(pipeline_layout);
+
+		mprg.tile_pipeline = wgpuDeviceCreateRenderPipeline(
+			device,
+			&(WGPURenderPipelineDescriptor){
+				.layout = pipeline_layout,
+				.vertex = (WGPUVertexState){
+					.module = shader,
+					.entryPoint = "vs_main",
+					.bufferCount = 1,
+					.buffers = (WGPUVertexBufferLayout[]){
+						(WGPUVertexBufferLayout){
+							.arrayStride = sizeof(struct tile_vtx),
+							.stepMode = WGPUVertexStepMode_Vertex,
+							.attributeCount = 3,
+							.attributes = (WGPUVertexAttribute[]) {
+								(WGPUVertexAttribute){
+									.format = WGPUVertexFormat_Float32x2,
+									.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_pos),
+									.shaderLocation = 0,
+								},
+								(WGPUVertexAttribute){
+									.format = WGPUVertexFormat_Float32x2,
+									.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_uv),
+									.shaderLocation = 1,
+								},
+								(WGPUVertexAttribute){
+									.format = WGPUVertexFormat_Unorm16x4,
+									.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_color),
+									.shaderLocation = 2,
+								},
+							},
+						},
+					},
+				},
+				.primitive = (WGPUPrimitiveState){
+					.topology = WGPUPrimitiveTopology_TriangleList,
+					.frontFace = WGPUFrontFace_CCW,
+					.cullMode = WGPUCullMode_None
+				},
+				.multisample = (WGPUMultisampleState){
+					.count = 1,
+					.mask = ~0,
+					.alphaToCoverageEnabled = false,
+				},
+				.fragment = &(WGPUFragmentState){
+					.module = shader,
+					.entryPoint = "fs_main",
+					.targetCount = 1,
+					.targets = &(WGPUColorTargetState){
+						.format = gpudl_get_preferred_swap_chain_texture_format(),
+						.blend = premultiplied_alpha_blend_state,
+						.writeMask = WGPUColorWriteMask_All
+					},
+				},
+				.depthStencil = NULL,
+			}
+		);
+
+	}
+
 	// R_MODE_VECTOR
 	{
-		const size_t unisz = sizeof(struct vector_uni);
-
-		mprg.vector_unibuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
-			.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-			.size = unisz,
-		});
-		assert(mprg.vector_unibuf);
+		const size_t unisz = sizeof(struct draw_uni);
 
 		WGPUShaderModule shader = mk_shader_module(device, shadersrc_vector);
 
@@ -768,7 +880,7 @@ int main(int argc, char** argv)
 			.entries = (WGPUBindGroupEntry[]){
 				(WGPUBindGroupEntry){
 					.binding = 0,
-					.buffer = mprg.vector_unibuf,
+					.buffer = mprg.draw_unibuf,
 					.offset = 0,
 					.size = unisz,
 				},
@@ -830,18 +942,7 @@ int main(int argc, char** argv)
 					.targetCount = 1,
 					.targets = &(WGPUColorTargetState){
 						.format = gpudl_get_preferred_swap_chain_texture_format(),
-						.blend = &(WGPUBlendState){
-							.color = (WGPUBlendComponent){
-								.srcFactor = WGPUBlendFactor_One,
-								.dstFactor = WGPUBlendFactor_Zero,
-								.operation = WGPUBlendOperation_Add,
-							},
-							.alpha = (WGPUBlendComponent){
-								.srcFactor = WGPUBlendFactor_One,
-								.dstFactor = WGPUBlendFactor_Zero,
-								.operation = WGPUBlendOperation_Add,
-							}
-						},
+						.blend = premultiplied_alpha_blend_state,
 						.writeMask = WGPUColorWriteMask_All
 					},
 				},
@@ -1038,6 +1139,7 @@ int main(int argc, char** argv)
 
 			r_begin(R_MODE_VECTOR);
 
+			#if 0
 			const float m1 = imax;;
 			{
 				int x0 = 200;
@@ -1070,6 +1172,14 @@ int main(int argc, char** argv)
 			}
 
 			rv_quad_ygrad(80, 0, 5, window->height, v4(m1,m1,m1,1), v4(0,0,0,0));
+			#endif
+
+			{
+				const float S = 50;
+				rv_quad(window->width/2-S, 0, S*2, window->height, v4(0.5,0,0,0));
+				rv_quad(0, window->height/2-S, window->width, S*2, v4(0,0.25,0,0.5));
+
+			}
 
 			r_end();
 

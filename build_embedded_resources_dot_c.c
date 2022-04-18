@@ -1,4 +1,5 @@
 #define WGSLS \
+	WGSL("tile.wgsl",    "shadersrc_tile"     ) \
 	WGSL("vector.wgsl",  "shadersrc_vector"   ) \
 	WGSL("ppgauss.wgsl", "shadersrc_ppgauss"  )
 
