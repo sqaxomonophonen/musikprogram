@@ -20,6 +20,8 @@
 #define ATLAS_WIDTH  (2048)
 #define ATLAS_HEIGHT (2048)
 
+#define MAX_INTENSITY (16)
+
 #define MAX_WINDOWS (16)
 
 #define FRAMEBUFFER_DEFAULT_TEXTURE_FORMAT (WGPUTextureFormat_BGRA8UnormSrgb)
@@ -480,7 +482,7 @@ static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_text
 
 	enum postproc_type t = r->postproc.type;
 	const float scalar =
-		t == PP_NONE ? 16.0f :
+		t == PP_NONE ? MAX_INTENSITY :
 		t == PP_GAUSS ? 1.0f :
 		0.0f;
 
@@ -565,7 +567,7 @@ static uint16_t fto16(float v)
 
 static void colpak(uint16_t* dst, union v4 rgba)
 {
-	const float s = 1.0f / 16.0f;
+	const float s = 1.0f / MAX_INTENSITY;
 	dst[0] = fto16(rgba.s[0] * s);
 	dst[1] = fto16(rgba.s[1] * s);
 	dst[2] = fto16(rgba.s[2] * s);
@@ -574,6 +576,7 @@ static void colpak(uint16_t* dst, union v4 rgba)
 
 static void rv_quad(float x, float y, float w, float h, union v4 color)
 {
+	assert(mprg.r.mode == R_MODE_VECTOR);
 	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
 	pv[0].a_pos.x = x;
@@ -595,6 +598,7 @@ static void rv_quad(float x, float y, float w, float h, union v4 color)
 
 static void rv_quad_ygrad(float x, float y, float w, float h, union v4 color0, union v4 color1)
 {
+	assert(mprg.r.mode == R_MODE_VECTOR);
 	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
 	pv[0].a_pos.x = x;
@@ -1119,7 +1123,7 @@ int main(int argc, char** argv)
 	struct PWR pwr = {0};
 	struct fps* fps = fps_new(60);
 
-	int imax = 16;
+	int imax = MAX_INTENSITY;
 	while (mprg.n_windows > 0) {
 		int on_battery = PWR_on_battery(&pwr);
 
@@ -1156,7 +1160,7 @@ int main(int argc, char** argv)
 					if (e.key.code == GK_UP) imax++;
 					if (e.key.code == GK_DOWN) imax--;
 					if (imax < 0) imax = 0;
-					if (imax > 16) imax = 16;
+					if (imax > MAX_INTENSITY) imax = MAX_INTENSITY;
 
 				}
 				break;
