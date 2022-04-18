@@ -196,17 +196,6 @@ static void new_window()
 	w->id = gpudl_window_open("musikprogram");
 }
 
-static void window_update_size(struct window* window)
-{
-	int prev_width = window->width;
-	int prev_height = window->height;
-	gpudl_window_get_size(window->id, &window->width, &window->height);
-
-	if (window->width != prev_width || window->height != prev_height) {
-		printf("TODO update per-window post processing stuff?\n");
-	}
-}
-
 static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
 {
 	WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &(WGPUShaderModuleDescriptor) {
@@ -485,7 +474,7 @@ static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_text
 	assert((r->begun_frames) && "not inside r_begin_frames()");
 	assert((!r->begun_frame) && "already inside r_begin_frame()");
 
-	window_update_size(window);
+	gpudl_window_get_size(window->id, &window->width, &window->height);
 
 	assert((r->window == NULL) && "frame already begun");
 	assert(r->vtxbuf_cursor == 0);
