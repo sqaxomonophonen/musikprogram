@@ -13,17 +13,13 @@
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
-extern int verbosity;
-#define VB(x) (verbosity >= (x))
-#define VB0 VB(0)
-#define VB1 VB(1)
-#define VB2 VB(2)
-#define VB3 VB(3)
-#define VB4 VB(4)
-#define VB5 VB(5)
-#define VB6 VB(6)
-
 #define TODO assert(!"TODO");
+
+#ifdef __linux__
+#define ASSERT_LINUX
+#else
+#define ASSERT_LINUX assert(!"ASSERT_LINUX failed");
+#endif
 
 union v2 {
 	float s[2];
@@ -66,7 +62,6 @@ static inline float u8tof(uint8_t value)
 {
 	return (float)value * (1.0f / 255.0f);
 }
-
 
 #define COMMON_H
 #endif
