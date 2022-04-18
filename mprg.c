@@ -42,8 +42,13 @@ enum {
 };
 
 struct ppgauss_uni {
-	int dst_dim[2];
-	// TODO
+	float dst_dim[2];
+	float seed;
+	float sigma;
+	float rstep;
+	float broken;
+	int n0;
+	int n1;
 };
 
 enum postproc_type {
@@ -61,6 +66,7 @@ struct postproc {
 	WGPUBuffer           gauss_unibuf;
 	WGPUBindGroupLayout  gauss_bind_group_layout;
 	WGPURenderPipeline   gauss_pipeline;
+	WGPUSampler          gauss_sampler;
 };
 
 struct postproc_framebuf {
@@ -69,7 +75,7 @@ struct postproc_framebuf {
 	WGPUBindGroup    bind_group;
 };
 
-#define MAX_POSTPROC_FRAMEBUFS (2)
+#define MAX_POSTPROC_FRAMEBUFS (1)
 
 struct postproc_window {
 	int width;
@@ -129,6 +135,7 @@ struct r {
 	WGPUCommandEncoder encoder;
 	WGPURenderPipeline pipeline;
 	WGPUBindGroup bind_group;
+	float seed;
 };
 
 struct mprg {
@@ -238,7 +245,7 @@ static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureVi
 				mprg.device,
 				&(WGPUBindGroupDescriptor){
 					.layout = pp->gauss_bind_group_layout,
-					.entryCount = 2,
+					.entryCount = 3,
 					.entries = (WGPUBindGroupEntry[]){
 						(WGPUBindGroupEntry){
 							.binding = 0,
@@ -249,6 +256,10 @@ static WGPUTextureView postproc_begin_frame(struct window* window, WGPUTextureVi
 						(WGPUBindGroupEntry){
 							.binding = 1,
 							.textureView = view,
+						},
+						(WGPUBindGroupEntry){
+							.binding = 2,
+							.sampler = pp->gauss_sampler,
 						},
 					},
 				}
@@ -279,7 +290,14 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 	case PP_GAUSS: {
 		struct ppgauss_uni u = {
 			.dst_dim = {ppw->width, ppw->height},
+			.seed = r->seed,
+			.sigma = 0.0005f,
+			.rstep = 54.31f,
+			.broken = 0.0f,
+			.n0 = 3,
+			.n1 = 4,
 		};
+
 		wgpuQueueWriteBuffer(mprg.queue, pp->gauss_unibuf, 0, &u, sizeof u);
 
 		assert(ppw->swap_chain_texture_view);
@@ -425,6 +443,8 @@ static void r_end_frames()
 	pp->previous_type = pp->type;
 
 	r->begun_frames = 0;
+
+	r->seed = fmodf(r->seed + 0.017f, 11.11f);
 }
 
 static void r_begin_frame(struct window* window, WGPUTextureView swap_chain_texture_view)
@@ -755,7 +775,7 @@ int main(int argc, char** argv)
 		pp->gauss_bind_group_layout = wgpuDeviceCreateBindGroupLayout(
 			device,
 			&(WGPUBindGroupLayoutDescriptor){
-				.entryCount = 2,
+				.entryCount = 3,
 				.entries = (WGPUBindGroupLayoutEntry[]){
 					(WGPUBindGroupLayoutEntry){
 						.binding = 0,
@@ -775,10 +795,29 @@ int main(int argc, char** argv)
 							.multisampled = false,
 						},
 					},
+					(WGPUBindGroupLayoutEntry){
+						.binding = 2,
+						.visibility = WGPUShaderStage_Fragment,
+						.sampler = (WGPUSamplerBindingLayout){
+							.type = WGPUSamplerBindingType_Filtering,
+						},
+					},
 				},
 			}
 		);
 		assert(pp->gauss_bind_group_layout);
+
+		pp->gauss_sampler = wgpuDeviceCreateSampler(mprg.device, &(WGPUSamplerDescriptor) {
+			.addressModeU = WGPUAddressMode_ClampToEdge,
+			.addressModeV = WGPUAddressMode_ClampToEdge,
+			.addressModeW = WGPUAddressMode_ClampToEdge,
+			.magFilter = WGPUFilterMode_Linear,
+			.minFilter = WGPUFilterMode_Linear,
+			.mipmapFilter = WGPUMipmapFilterMode_Nearest,
+			.lodMinClamp = 0.0f,
+			.lodMaxClamp = 0.0f,
+		});
+		assert(pp->gauss_sampler);
 
 		WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(
 			device,
@@ -861,7 +900,16 @@ int main(int argc, char** argv)
 				do_close = 1;
 				break;
 			case GPUDL_KEY:
-				if (e.key.code == '\033') do_close = 1;
+				if (e.key.pressed) {
+					if (e.key.code == '\033') do_close = 1;
+					if (e.key.code == 'p') {
+						if (mprg.postproc.type == PP_GAUSS) {
+							mprg.postproc.type = PP_NONE;
+						} else {
+							mprg.postproc.type = PP_GAUSS;
+						}
+					}
+				}
 				break;
 			default:
 				break;
@@ -887,7 +935,7 @@ int main(int argc, char** argv)
 
 			r_begin_frame(window, v);
 
-			#if 1
+			#if 0
 			r_begin(R_MODE_VECTOR);
 			rv_quad(0,               0,                window->width/2, window->height/2, v4(1,0,0,1));
 			rv_quad(window->width/2, 0,                window->width/2, window->height/2, v4(0,1,0,1));
@@ -899,7 +947,7 @@ int main(int argc, char** argv)
 			r_end();
 			#else
 			r_begin(R_MODE_VECTOR);
-			rv_quad(500, 500, 200, 200, v4(0.01,0.01,0,1));
+			rv_quad(500, 500, 200, 200, v4(1,1,0,1));
 			rv_quad(100, 500, 1, 200, v4(0,1,0,1));
 			r_end();
 			#endif
