@@ -68,9 +68,6 @@ struct ppgauss_uni {
 enum postproc_type {
 	PP_NONE,
 	PP_GAUSS,
-	//PP_XGAUSS,
-	//PP_YGAUSS,
-	//PP_NOISY,
 };
 
 struct postproc {
