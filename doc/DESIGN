@@ -1,0 +1,163 @@
+
+
+Main "viewports":
+ - Tracker/timeline
+ - Graph editor
+
+Minor "viewports":
+ - custom controls (variable width, fixed height)
+ - status-/menubar
+
+
+
+Layout:
+
+ - X-split between timeline and graph editor; X-split has 4 modes: "full
+   timeline", "full graph", "percentage split" (you decide where the split line
+   goes), and "focused mode" where the tracker viewport is "compressed" in
+   width to the selected columns and these are also highlighted in the graph
+   editor... I'm thinking the X-split position in "percentage split" can be
+   "locked" (I hate when you accidentally click something in a bloated GUI)
+
+ - Y-split between X-split and controls; this is optional, and controls can be
+   hidden
+
+ - One small status bar (bottom or top?); contains... CPU usage... FPS (can
+   probably be hidden)... play/stop/rec buttons? perhaps loop too? also
+   X/Y-split modes can probably be selected here... and there's probably a
+   "main menu" button
+
+
+
+Layout examples:
+
+  ======status=======   ======status=======  ======status=======   +-----------------+
+  +-----------------+   +---------+-------+  +---------+-------+   |                 |
+  |    controls     |   |         |       |  |         |       |   | tracker         |
+  +---------+-------+   | tracker | graph |  | tracker | graph |   |                 |
+  |         |       |   |         |       |  |         |       |   |                 |
+  | tracker | graph |   |         |       |  |         |       |   |                 |
+  |         |       |   +---------+-------+  |         |       |   |                 |
+  |         |       |   |    controls     |  |         |       |   +-----------------+
+  +---------+-------+   +-----------------+  +---------+-------+   ======status=======
+
+
+
+Graph editor:
+
+ - Is "vertical", i.e. inputs are at the top, and outputs are at the bottom.
+   One reason for this is that the tracker itself is vertical, so it makes
+   "visual sense". Another reason is that glyphs commonly have height>width, so
+   it might be possible to utilize the space slightly better.
+
+ - I/O ports are typically labelled with 1 character, or perhaps a few (2-3),
+   but are defined like "[f]requency" ("[f]" means the short-hand display:
+   "p"), or "frequency" (defaults to first letter: "f"), or even "[Fi] Impulse
+   Frequency" (shown as "Fi") or "noi[z]e gain" ("z"). When mouse overing it
+   probably expands to the full label (e.g. "noi[z]e gain" expands to "noi" to
+   the left, and "e gain" to the right?)
+
+ - You can have custom code graph nodes; when double-clicking, the graph editor
+   turns into a code editor
+
+ - In general there's a "navigation stack", where you can e.g. enter a
+   container node, and then a custom code node, and then you need to press
+   [parent] twice to get back to where you were
+
+ - Color coding? Different connection types (bezier lines between node ports)
+   have different colors: constants, events, streams... perhaps nodes are also
+   color coded; e.g. simple stateless math could have one color, and other
+   things could have other colors... for custom nodes you can probably choose
+   your own colors
+
+ - Slightly higher-level features include; containers/macros (to group
+   subgraphs into a single node that can be copied), and arrays; a container
+   that duplicates its contents N times; there's a special "index node" that
+   tells which index each instance is so they can differentiate themselves...
+   there can be various fork/join schemes, but by default inputs are probably
+   "referenced" (all instances "see" the same input buffers), and outputs are
+   accumulated (added). There are also rate changes, but these probably look
+   like normal nodes (perhaps using different colors), despite doing "something
+   weird".
+
+
+Custom code graph nodes / VM:
+
+ - Written in a custom, fantasy assembly language, possibly with some DSL-like
+   convenience features, but otherwise quite low-level and simple
+
+ - The VM is probably heap-based, with a "zero page" instead of registers, and
+   the stack lives on the heap (e.g. address 0x100-0x200 or something)
+
+ - Due to the simplicity I'd like to "go overboard" with editor and debugger
+   features, to make it as easy/powerful to use as possible.
+
+ - Maybe I'd also like a *macro* assembler
+
+ - Mainly for event processing, but audio processors could be possible too?
+
+ - Probably a simple switch/case VM inner-loop, but performance gains via
+   simple JIT'ing should be possible? (e.g. simply to remove/expand the
+   switch/case for starters?)
+
+ - I don't think graph constructors is a thing; i.e. code that builds graph
+   structures; I should be able to get by with graph-only features
+
+ - I'm thinking, maybe, to avoid memory management issues, I have 256 "heap
+   arenas" which can each grow independently via some kind of "sbrk()" syscall.
+   This means each input/output event stream can have its own arena; input
+   event streams are read-only and trigger a "processor exception" if you
+   attempt a write? Zero page and stack always live in "arena 0"?
+
+ - Event editor... events are somewhat simple, {ts, type, args...}, and can be
+   edited in a tracker-like editor, and then the event processor output can be
+   displayed LIVE
+
+
+Tracker:
+
+ - 3 mandatory columns: BPM (interpolated between values); Markers/Labels;
+   LPB/BPB/"time-signature" column (two values; Line Per Beat, and Beats Per
+   Bar; each non-nil entry resets the relative position, so that the same line
+   is always "offset zero in the next bar"; this should probably avoid weird
+   beat/bar subdivisions). (Also: I had some ideas about support for
+   "mixed-LPB", but I don't think it's worth it). Labels/markers don't have to
+   be unique I think; their main feature is to be able to navigate/select to
+   next/prev marker.. I'm thinking you can change the marker column with; 1 to
+   8 characters or something?
+
+ - All other columns are custom, and their "meaning" is decided by event
+   processors and the graph in general. Column types include "nnn" (notes), and
+   number columns like "xx" and "ddd"... these can probably be normalized
+   ([0;1] output), or not (e.g. [0;255] for "xx")
+
+ - "Endless", or "A total number of lines"; there aren't patterns like in
+   traditional trackers; sections are (loosely) defined by the labels/markers
+   column. Possibly, a BPM and/or LPB/BPB (time-signature) value of zero marks
+   the end of the song?
+
+ - Columns are probably grouped... either explicitly by defining groups and
+   giving them names, or by special separator columns. Grouping is mainly
+   cosmetic, and for convenience; copy/paste/select/etc; e.g. for selecting you
+   can probably select lines in the entire group; you can also solo/mute an
+   entire group (implemented via graph input "poison"?)
+
+ - There are special visual feedback columns; these must be "connected" in the
+   graph and typically renders event streams
+
+ - Audio tracks are also "special columns", displaying the PCM waveform?
+
+
+
+
+
+
+TBD?
+
+ - Tracker: Column/structure editing; add/remove columns; re-order columns; and
+   edit parameters/flags? E.g. an "xx" column can be normalized or not (a
+   checkbox/boolean). This might be a "column-edit mode", because normally
+   these things shouldn't clutter the interface
+
+
+
