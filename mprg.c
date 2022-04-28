@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <assert.h>
 
 #include "stb_ds.h"
@@ -45,6 +46,28 @@
 // I.e. it allows me to add 4 vertices to the vertex buffer in order to draw a
 // quad, and the index buffer expands each quad to 2 triangles. Since there are
 // 6 indices per 4 vertices, the size must be 65536*(6/4) (to "max it out")
+
+
+union c16 {
+	uint16_t c[4];
+	union {
+		uint16_t r,g,b,a;
+	};
+};
+
+static inline uint16_t fto16(float v)
+{
+	if (v < 0.0f) v = 0.0f;
+	if (v > 1.0f) v = 1.0f;
+	return roundf(v * 65535.0f);
+}
+
+static inline void c16pak(union c16* c, union v4* rgba)
+{
+	const float s = 1.0f / MAX_INTENSITY;
+	for (int i = 0; i < 3; i++) c->c[i] = fto16(rgba->s[i] * s);
+	c->c[3] = fto16(rgba->s[3]);
+}
 
 enum {
 	R_MODE_TILE = 1,
@@ -106,14 +129,14 @@ struct window {
 struct tile_vtx {
 	union v2 a_pos;
 	union v2 a_uv;
-	uint32_t a_color;
+	union c16 a_color;
 };
 
 struct plot_vtx {
 	union v2 a_pos;
 	union v2 a_uv;
 	float a_threshold;
-	uint32_t a_color;
+	union c16 a_color;
 };
 
 // common for R_MODE_VECTOR/R_MODE_PLOT/R_MODE_TILE
@@ -126,7 +149,7 @@ struct draw_uni {
 
 struct vector_vtx {
 	union v2 a_pos;
-	uint16_t a_color[4];
+	union c16 a_color;
 };
 
 struct tile_atlas {
@@ -145,6 +168,20 @@ struct tile_atlas {
 	int update_y0;
 	int update_x1;
 	int update_y1;
+};
+
+enum r_font {
+	R_TILES,
+	R_FONT_MONOSPACE,
+	R_FONT_VARIABLE,
+	R_FONT_END
+};
+
+struct font {
+	stbtt_fontinfo info;
+	int ascent;
+	int descent;
+	int line_gap;
 };
 
 struct r { // r for rrrender
@@ -177,6 +214,17 @@ struct r { // r for rrrender
 	WGPURenderPipeline pipeline;
 	WGPUBindGroup bind_group;
 	float seed;
+
+	union c16 color0, color1, color2, color3;
+
+	enum r_font font;
+	int font_px;
+	int font_cx0;
+	int font_cx;
+	int font_cy;
+
+	struct font font_monospace;
+	struct font font_variable;
 };
 
 struct mprg {
@@ -190,6 +238,12 @@ static void new_window()
 	if (mprg.n_windows >= MAX_WINDOWS) return;
 	struct window* w = &mprg.windows[mprg.n_windows++];
 	w->id = gpudl_window_open("musikprogram");
+}
+
+static void font_init(struct font* font, void* data, int index)
+{
+	stbtt_InitFont(&font->info, data, stbtt_GetFontOffsetForIndex(data, index));
+	stbtt_GetFontVMetrics(&font->info, &font->ascent, &font->descent, &font->line_gap);
 }
 
 static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
@@ -345,26 +399,26 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 }
 
 
-#define FF_END_PASS         (1<<0)
+#define FF_END_MODE         (1<<0)
 #define FF_END_FRAME        (1<<1)
 #define FF_VTXBUF_OVERFLOW  (1<<2)
 #define FF_IDXBUF_OVERFLOW  (1<<3)
 static void r_flush(int flags)
 {
-	assert(((flags == FF_END_PASS) || (flags == FF_END_FRAME) || ((flags&FF_VTXBUF_OVERFLOW) || (flags&FF_IDXBUF_OVERFLOW))) && "invalid r_flush() flags");
+	assert(((flags == FF_END_MODE) || (flags == FF_END_FRAME) || ((flags&FF_VTXBUF_OVERFLOW) || (flags&FF_IDXBUF_OVERFLOW))) && "invalid r_flush() flags");
 
 	struct r* r = &mprg.r;
 	assert(r->vtxbuf_cursor >= r->cursor0);
 	const int n = (r->vtxbuf_cursor - r->cursor0);
 
-	const int is_end_pass         = flags & FF_END_PASS;
+	const int is_end_mode         = flags & FF_END_MODE;
 	const int is_end_frame        = flags & FF_END_FRAME;
 	const int is_vtxbuf_overflow  = flags & FF_VTXBUF_OVERFLOW;
 	const int is_idxbuf_overflow  = flags & FF_IDXBUF_OVERFLOW;
 
 	assert((!is_end_frame || n == 0) && "cannot end frame with elements still in vtxbuf");
 
-	const int do_pass   = (n > 0) && (is_end_pass || is_vtxbuf_overflow || is_idxbuf_overflow);
+	const int do_pass   = (n > 0) && (is_end_mode || is_vtxbuf_overflow || is_idxbuf_overflow);
 	const int do_submit = is_end_frame || is_vtxbuf_overflow;
 
 	if (r->encoder == NULL) {
@@ -515,6 +569,11 @@ static void r_begin(int mode)
 	assert((r->mode == 0) && "already in a mode");
 
 	switch (mode) {
+	case R_MODE_TILE: {
+		struct tile_atlas* a = &r->tile_atlas;
+		r->pipeline = a->pipeline;
+		r->bind_group = a->bind_group;
+		}; break;
 	case R_MODE_VECTOR:
 		r->pipeline = r->vector_pipeline;
 		r->bind_group = r->vector_bind_group;
@@ -528,7 +587,7 @@ static void r_begin(int mode)
 
 static void r_end()
 {
-	r_flush(FF_END_PASS);
+	r_flush(FF_END_MODE);
 	struct r* r = &mprg.r;
 	assert(r->mode > 0);
 	r->mode = 0;
@@ -558,64 +617,156 @@ static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 	return p;
 }
 
-static uint16_t fto16(float v)
+
+static void r_color_plain(union v4 color)
 {
-	if (v < 0.0f) v = 0.0f;
-	if (v > 1.0f) v = 1.0f;
-	return roundf(v * 65535.0f);
+	struct r* r = &mprg.r;
+	c16pak(&r->color0, &color);
+	r->color1 = r->color0;
+	r->color2 = r->color0;
+	r->color3 = r->color0;
 }
 
-static void colpak(uint16_t* dst, union v4 rgba)
+static void rt_font(enum r_font font, int px)
 {
-	const float s = 1.0f / MAX_INTENSITY;
-	dst[0] = fto16(rgba.s[0] * s);
-	dst[1] = fto16(rgba.s[1] * s);
-	dst[2] = fto16(rgba.s[2] * s);
-	dst[3] = fto16(rgba.s[3]);
+	assert((R_TILES < font) && (font < R_FONT_END) && "invalid font");
+	assert(0 < px && px < 512);
+	struct r* r = &mprg.r;
+	r->font = font;
+	r->font_px = px;
 }
 
-static void rv_quad(float x, float y, float w, float h, union v4 color)
+static void rt_goto(int cx, int cy)
 {
-	assert(mprg.r.mode == R_MODE_VECTOR);
+	struct r* r = &mprg.r;
+	r->font_cx0 = r->font_cx = cx;
+	r->font_cy = cy;
+}
+
+static int utf8_decode(const char** c0z, int* n)
+{
+	const unsigned char** c0 = (const unsigned char**)c0z;
+	if (*n <= 0) return -1;
+	unsigned char c = **c0;
+	(*n)--;
+	(*c0)++;
+	if ((c & 0x80) == 0) return c & 0x7f;
+	int mask = 192;
+	int d;
+	for (d = 1; d <= 3; d++) {
+		int match = mask;
+		mask = (mask >> 1) | 0x80;
+		if ((c & mask) == match) {
+			int codepoint = (c & ~mask) << (6*d);
+			while (d > 0 && *n > 0) {
+				c = **c0;
+				if ((c & 192) != 128) return -1;
+				(*c0)++;
+				(*n)--;
+				d--;
+				codepoint += (c & 63) << (6*d);
+			}
+			return d == 0 ? codepoint : -1;
+		}
+	}
+	return -1;
+}
+
+static struct font* get_font_for_bank(int bank)
+{
+	struct r* r = &mprg.r;
+	switch (bank) {
+	case R_FONT_MONOSPACE: return &r->font_monospace;
+	case R_FONT_VARIABLE:  return &r->font_variable;
+	default: assert(!"invalid font");
+	}
+}
+
+static void rt_printf(const char* fmt, ...)
+{
+	struct r* r = &mprg.r;
+
+	char buffer[1<<14];
+	va_list ap;
+	va_start(ap, fmt);
+	const int n0 = vsnprintf(buffer, sizeof buffer, fmt, ap);
+	va_end(ap);
+
+	const int px = r->font_px;
+	struct font* font = get_font_for_bank(r->font);
+	const float scale = stbtt_ScaleForPixelHeight(&font->info, px);
+
+	//const int ascent_px = roundf((float)(font->ascent) * scale);
+	const int linebreak_dy = roundf((float)(font->ascent - font->descent + font->line_gap) * scale);
+
+	int cursor_x = r->font_cx;
+	int cursor_y = r->font_cy;
+
+	const char* p = buffer;
+	int n = n0;
+	int last_codepoint = -1;
+	for (;;) {
+		int codepoint = utf8_decode(&p, &n);
+		if (codepoint < 0) break;
+
+		if (codepoint < ' ') {
+			if (codepoint == '\n') {
+				cursor_x = r->font_cx0;
+				cursor_y += linebreak_dy;
+			}
+			last_codepoint = -1;
+		} else {
+			// NOTE stb_truetype.h recommends caching this, but... is "my
+			// binary search better than theirs"?
+			const int glyph_index = stbtt_FindGlyphIndex(&font->info, codepoint);
+
+			int advance_width = 0;
+			int left_side_bearing = 0;
+			stbtt_GetGlyphHMetrics(&font->info, glyph_index, &advance_width, &left_side_bearing);
+			int kern = last_codepoint > 0 ? stbtt_GetCodepointKernAdvance(&font->info, last_codepoint, codepoint) : 0;
+			const int dx = roundf((float)(advance_width + kern) * scale);
+
+			int x0, y0, x1, y1;
+			stbtt_GetGlyphBitmapBox(&font->info, glyph_index, scale, scale, &x0, &y0, &x1, &y1);
+			const int w = x1-x0;
+			const int h = y1-y0;
+
+			if (w > 0 && h > 0) {
+				const int lsb = (int)roundf((float)left_side_bearing * scale);
+				//printf("plot %d at %d,%d %dx%d\n", codepoint, cursor_x + lsb, cursor_y + y0, w, h);
+				//draw_gt(bank, codepoint, cursor_x + lsb, cursor_y + y0, w, h);
+			}
+
+			cursor_x += dx;
+			last_codepoint = codepoint;
+		}
+	}
+
+	r->font_cx = cursor_x;
+	r->font_cy = cursor_y;
+}
+
+static void rv_quad(float x, float y, float w, float h)
+{
+	struct r* r = &mprg.r;
+	assert(r->mode == R_MODE_VECTOR);
 	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
 	pv[0].a_pos.x = x;
 	pv[0].a_pos.y = y;
-	colpak(pv[0].a_color, color);
+	pv[0].a_color = r->color0;
 
 	pv[1].a_pos.x = x+w;
 	pv[1].a_pos.y = y;
-	colpak(pv[1].a_color, color);
+	pv[1].a_color = r->color1;
 
 	pv[2].a_pos.x = x+w;
 	pv[2].a_pos.y = y+h;
-	colpak(pv[2].a_color, color);
+	pv[2].a_color = r->color2;
 
 	pv[3].a_pos.x = x;
 	pv[3].a_pos.y = y+h;
-	colpak(pv[3].a_color, color);
-}
-
-static void rv_quad_ygrad(float x, float y, float w, float h, union v4 color0, union v4 color1)
-{
-	assert(mprg.r.mode == R_MODE_VECTOR);
-	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
-
-	pv[0].a_pos.x = x;
-	pv[0].a_pos.y = y;
-	colpak(pv[0].a_color, color0);
-
-	pv[1].a_pos.x = x+w;
-	pv[1].a_pos.y = y;
-	colpak(pv[1].a_color, color0);
-
-	pv[2].a_pos.x = x+w;
-	pv[2].a_pos.y = y+h;
-	colpak(pv[2].a_color, color1);
-
-	pv[3].a_pos.x = x;
-	pv[3].a_pos.y = y+h;
-	colpak(pv[3].a_color, color1);
+	pv[3].a_color = r->color3;
 }
 
 static void wgpu_native_log_callback(WGPULogLevel level, const char* msg)
@@ -693,6 +844,9 @@ int main(int argc, char** argv)
         #undef DUMP64
         #undef DUMP32
         #endif
+
+	font_init(&mprg.r.font_monospace, fontdata_mono, 0);
+	font_init(&mprg.r.font_variable, fontdata_variable, 0);
 
 	mprg.r.postproc.type = PP_GAUSS;
 
@@ -894,7 +1048,6 @@ int main(int argc, char** argv)
 						.writeMask = WGPUColorWriteMask_All
 					},
 				},
-				.depthStencil = NULL,
 			}
 		);
 
@@ -997,7 +1150,6 @@ int main(int argc, char** argv)
 						.writeMask = WGPUColorWriteMask_All
 					},
 				},
-				.depthStencil = NULL,
 			}
 		);
 	}
@@ -1114,7 +1266,6 @@ int main(int argc, char** argv)
 						.writeMask = WGPUColorWriteMask_All
 					},
 				},
-				.depthStencil = NULL,
 			}
 		);
 		assert(pp->gauss_pipeline);
@@ -1227,10 +1378,21 @@ int main(int argc, char** argv)
 
 			{
 				const float S = 50;
-				rv_quad(window->width/2-S, 0, S*2, window->height, v4(1.5,0,0,0));
-				rv_quad(0, window->height/2-S, window->width, S*2, v4(0,0,2,0.9));
+				r_color_plain(v4(1.5,0,0,0));
+				rv_quad(window->width/2-S, 0, S*2, window->height);
+				r_color_plain(v4(0,0,2,0.9));
+				rv_quad(0, window->height/2-S, window->width, S*2);
 
 			}
+
+			r_end();
+
+			r_begin(R_MODE_TILE);
+
+			r_color_plain(v4(3.5, 2.0, 1.5, 1.0));
+			rt_font(R_FONT_VARIABLE, 21);
+			rt_goto(5, window->height-6);
+			rt_printf("hello %d", 420);
 
 			r_end();
 

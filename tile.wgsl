@@ -30,5 +30,5 @@ fn vs_main(
 
 @stage(fragment)
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
-	return fragmap(in.rgba * textureLoad(atlas, vec2<i32>(i32(in.uv.x), i32(in.uv.y)), 0));
+	return fragmap(in.rgba * textureLoad(atlas, vec2<i32>(i32(in.uv.x), i32(in.uv.y)), 0).r);
 }
