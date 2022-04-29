@@ -11,14 +11,30 @@ enum r_tile_group {
 	RTG_END
 };
 
-#define EXPAND3x3 (1)
+#define EXT (-1) // XXX or 0?
+
+#define TT0(N,G,W,H,EXPR) TT(N,G,W,H,DX,DY,EXPR)
+
+#define TT3x3(N,G,W,H,EXPR) \
+	TT(N ## _x0y0, G, W,   H,   -1, -1, EXPR) \
+	TT(N ## _x1y0, G, EXT, H,    0, -1, EXPR) \
+	TT(N ## _x2y0, G, W,   H,    0, -1, EXPR) \
+	TT(N ## _x0y1, G, W,   EXT, -1,  0, EXPR) \
+	TT(N ## _x1y1, G, EXT, EXT,  0,  0, EXPR) \
+	TT(N ## _x2y1, G, W,   EXT,  0,  0, EXPR) \
+	TT(N ## _x0y2, G, W,   H,   -1,  0, EXPR) \
+	TT(N ## _x1y2, G, EXT, H,    0,  0, EXPR) \
+	TT(N ## _x2y2, G, W,   H,    0,  0, EXPR)
 
 #define TILES \
-	T(box,  boxes,  EXPAND3x3, 1.0, 1.0, Circle(1.0)) \
-	T(box2, boxes2, EXPAND3x3, 1.0, 1.0, Circle(1.0))
+	TT0(box,  boxes,  1.0, 1.0, Circle(1.0)) \
+	TT0(box2, boxes2, 1.0, 1.0, Circle(1.0)) \
+	TT3x3(boxy, boxes, 1.0, 1.0, Circle(1.0))
 
 enum r_tile {
-	#define T(TILE,GROUP,FLAGS,WIDTH,HEIGHT,EXPR) RT_ ## TILE,
+	#define TT(N,G,W,H,DX,DY,EXPR) RT_ ## N,
+	TILES
+	#undef TT
 	RT_END
 };
 
