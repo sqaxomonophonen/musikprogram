@@ -1,5 +1,7 @@
 #ifndef R_TILE_H
 
+#include <stdint.h>
+
 #define TILE_GROUPS \
 	TG(boxes,  8.0,  "Rounded Boxes") \
 	TG(boxes2, 10.0, "Other rounded Boxes")
@@ -37,6 +39,8 @@ enum r_tile {
 	#undef TT
 	RT_END
 };
+
+void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride); // r_tile_raster.c
 
 #define R_TILE_H
 #endif

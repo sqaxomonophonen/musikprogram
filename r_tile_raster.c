@@ -1,13 +1,16 @@
+#include <assert.h>
+
 #include "r_tile.h"
 
-#if 0
-extern int r_tiledim_px[TI_END][2];
+void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
+{
+	assert(!"TODO");//TODO
+}
 
-void r_tile_raster(enum r_tile tile, uint8_t* bitmap, int stride)
+#if 0
+void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 {
 	assert(0 <= tile && tile < TI_END);
-	int w = r_tiledim_px[tile][0];
-	int h = r_tiledim_px[tile][1];
 	if (w == EXT) w = 1;
 	if (h == EXT) h = 1;
 	assert(w > 0 && h > 0);

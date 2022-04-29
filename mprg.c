@@ -196,10 +196,10 @@ int main(int argc, char** argv)
 
 			r_begin(R_MODE_TILE);
 
-			r_color_plain(v4(3.5, 2.0, 1.5, 1.0));
+			r_color_plain(v4(2.5, 4.0, 1.5, 1.0));
 			rt_font(R_FONT_VARIABLE, 21);
-			rt_goto(5, window->height-6);
-			rt_printf("hello %d", 420);
+			rt_goto(5, window->height-50);
+			rt_printf("hello       / fps=%.2f", fps->fps);
 
 			r_end();
 

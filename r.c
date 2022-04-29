@@ -5,9 +5,11 @@
 
 #include "stb_rect_pack.h"
 #include "stb_truetype.h"
+#include "sokol_time.h"
 
 #include "embedded_resources.h"
 #include "r.h"
+#include "stb_ds.h"
 
 // couldn't convince myself that dynamic atlas resizing is worth the trouble :)
 // having to flush early when the atlas overflows is bad enough, but dynamic
@@ -37,6 +39,32 @@
 // quad, and the index buffer expands each quad to 2 triangles. Since there are
 // 6 indices per 4 vertices, the size must be 65536*(6/4) (to "max it out")
 
+
+
+#define GLYPHDEF_CODE_BITS (21)
+#define GLYPHDEF_SIZE_BITS (9)
+#define GLYPHDEF_BANK_BITS (2)
+
+union glyphdef {
+	uint32_t u32;
+	struct {
+		uint32_t code : GLYPHDEF_CODE_BITS; // highest unicode codepoint is U+10FFFF / 21 bits
+		uint32_t size : GLYPHDEF_SIZE_BITS;
+		uint32_t bank : GLYPHDEF_BANK_BITS;
+	};
+};
+
+static inline union glyphdef encode_glyphdef(int bank, int size, int code)
+{
+	assert(0 <= bank && bank < (1<<GLYPHDEF_BANK_BITS));
+	assert(0 <= size && size < (1<<GLYPHDEF_SIZE_BITS));
+	assert(0 <= code && code < (1<<GLYPHDEF_CODE_BITS));
+	return (union glyphdef) {
+		.bank = bank,
+		.size = size,
+		.code = code,
+	};
+}
 
 union c16 {
 	uint16_t c[4];
@@ -89,6 +117,8 @@ struct tile_vtx {
 	union v2 a_uv;
 	union c16 a_color;
 };
+
+#define MAX_TILE_QUADS (VTXBUF_SZ / (4*sizeof(struct tile_vtx)))
 
 struct plot_vtx {
 	union v2 a_pos;
@@ -157,10 +187,11 @@ struct r {
 	struct postproc postproc;
 	int begun_frames;
 	int begun_frame;
+	int n_tile_passes;
+	int n_passes;
 	int mode;
 	//struct window* window;
 	WGPUTextureView render_target_texture_view;
-	int n_passes;
 	int cursor0;
 	int n_static_quad_indices;
 	WGPUCommandEncoder encoder;
@@ -180,6 +211,9 @@ struct r {
 	struct font font_variable;
 
 	struct postproc_window* current_ppw;
+
+	union glyphdef glyphdef_requests[MAX_TILE_QUADS];
+	union glyphdef missing_glyphdefs[MAX_TILE_QUADS];
 } rstate;
 
 static void font_init(struct font* font, void* data, int index)
@@ -340,28 +374,211 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 	}
 }
 
+static int glyphdef_compare(union glyphdef a, union glyphdef b)
+{
+	uint32_t a32 = a.u32;
+	uint32_t b32 = b.u32;
+	if (a32 < b32) return -1;
+	if (a32 > b32) return 1;
+	return 0;
+}
+
+static int glyphdef_compar(const void* va, const void* vb)
+{
+	return glyphdef_compare(
+		*(const union glyphdef*)va,
+		*(const union glyphdef*)vb);
+}
+
+static inline int stbrect_compare(const stbrp_rect* a, const stbrp_rect* b)
+{
+	union glyphdef ua = { .u32 = a->id };
+	union glyphdef ub = { .u32 = b->id };
+	return glyphdef_compare(ua, ub);
+}
+
+static int stbrect_compar(const void* va, const void* vb)
+{
+	return stbrect_compare(va, vb);
+}
+
+static int get_glyph_index(union glyphdef glyphdef)
+{
+	struct r* r = &rstate;
+	struct tile_atlas* a = &r->tile_atlas;
+	stbrp_rect* rs = a->rects_arr;
+	int left = 0;
+	int right = arrlen(rs) - 1;
+	while (left <= right) {
+		int mid = (left+right) >> 1;
+		int d = glyphdef_compare((union glyphdef) {.u32 = rs[mid].id}, glyphdef);
+		if (d < 0) {
+			left = mid + 1;
+		} else if (d > 0) {
+			right = mid - 1;
+		} else {
+			return mid;
+		}
+	}
+	return -1;
+}
+
+static float tile_dimensions_in_units[RT_END][2] = {
+	#define TT(N,G,W,H,DX,DY,EXPR) { (float)(W), (float)(H) },
+	TILES
+	#undef TT
+};
+
+static inline int getpx(float units, int size)
+{
+	int v = ceilf(units * (float)size);
+	if (v <= 0) v = 1;
+	return v;
+}
+
+static struct font* get_font_for_bank(int bank)
+{
+	struct r* r = &rstate;
+	switch (bank) {
+	case R_FONT_MONOSPACE: return &r->font_monospace;
+	case R_FONT_VARIABLE:  return &r->font_variable;
+	default: assert(!"invalid font");
+	}
+}
+
+static void get_glyph_dim(union glyphdef glyphdef, int* w, int* h)
+{
+	const int bank = glyphdef.bank;
+	const int size = glyphdef.size;
+	const int code = glyphdef.code;
+	if (bank == R_TILES) {
+		assert(0 <= code && code < RT_END);
+		float wu = tile_dimensions_in_units[code][0];
+		float hu = tile_dimensions_in_units[code][1];
+		if (w) *w = wu == EXT ? 1 : getpx(wu, size);
+		if (h) *h = hu == EXT ? 1 : getpx(hu, size);
+	} else {
+		struct font* font = get_font_for_bank(bank);
+		const float scale = stbtt_ScaleForPixelHeight(&font->info, size);
+		int x0=0,y0=0,x1=0,y1=0;
+		stbtt_GetCodepointBitmapBox(&font->info, code, scale, scale, &x0, &y0, &x1, &y1);
+		int ww = x1-x0;
+		int hh = y1-y0;
+		if (w) *w = ww;
+		if (h) *h = hh;
+	}
+}
+
+static void glyph_raster(stbrp_rect* r)
+{
+	struct tile_atlas* a = &rstate.tile_atlas;
+	uint8_t* p = a->bitmap + r->x + r->y * ATLAS_WIDTH;
+	const int stride = ATLAS_WIDTH;
+	assert(stride > 0);
+	union glyphdef glyphdef = {.u32 = r->id};
+	int bank = glyphdef.bank;
+	int size = glyphdef.size;
+	int code = glyphdef.code;
+	printf("glyph_raster() for bank=%d, size=%d, code=%d\n", bank, size, code);
+	uint64_t t0 = stm_now();
+	int w,h;
+	get_glyph_dim(glyphdef, &w, &h);
+	if (w > 0 && h > 0) {
+		if (bank == R_TILES) {
+			r_tile_raster(code, w, h, p, stride);
+		} else {
+			struct font* font = get_font_for_bank(bank);
+			const float scale = stbtt_ScaleForPixelHeight(&font->info, size);
+			stbtt_MakeCodepointBitmap(&font->info, p, w, h, ATLAS_WIDTH, scale, scale, code);
+		}
+	}
+	uint64_t t1 = stm_now();
+	printf("glyph_raster() for bank=%d, size=%d, code=%d took %f seconds (%dx%d)\n", bank, size, code, (double)stm_ns(stm_diff(t1,t0))*1e-9, w, h);
+
+	const int ux0 = r->x;
+	const int uy0 = r->y;
+	const int ux1 = r->x + r->w;
+	const int uy1 = r->y + r->h;
+	if (!a->update) {
+		a->update = 1;
+		a->update_x0 = ux0;
+		a->update_y0 = uy0;
+		a->update_x1 = ux1;
+		a->update_y1 = uy1;
+	} else {
+		if (ux0 < a->update_x0) a->update_x0 = ux0;
+		if (ux1 > a->update_x1) a->update_x1 = ux1;
+		if (uy0 < a->update_y0) a->update_y0 = uy0;
+		if (uy1 > a->update_y1) a->update_y1 = uy1;
+	}
+}
+
+static int patch_tile_uvs(int n_quads)
+{
+	struct r* r = &rstate;
+	struct tile_atlas* a = &r->tile_atlas;
+	struct tile_vtx* pv = (struct tile_vtx*)(r->vtxbuf_data + r->cursor0);
+	int n_missing = 0;
+	for (int i = 0; i < n_quads; i++) {
+		const union glyphdef glyphdef = r->glyphdef_requests[i];
+		const int glyph_index = get_glyph_index(glyphdef);
+		if (glyph_index < 0) {
+			r->missing_glyphdefs[n_missing++] = glyphdef;
+		} else {
+			stbrp_rect* r = &a->rects_arr[glyph_index];
+
+			float u = r->x;
+			float v = r->y;
+			float w, h;
+			if (glyphdef.bank == R_TILES) {
+				const int code = glyphdef.code;
+				assert(0 <= code && code < RT_END);
+				const int ext_x = tile_dimensions_in_units[code][0] == EXT;
+				const int ext_y = tile_dimensions_in_units[code][1] == EXT;
+				if (ext_x) u += 0.5f;
+				if (ext_y) v += 0.5f;
+				w = ext_x ? 0.0f : r->w;
+				h = ext_y ? 0.0f : r->h;
+			} else {
+				w = r->w;
+				h = r->h;
+			}
+
+			pv[0].a_uv = v2(u,   v);
+			pv[1].a_uv = v2(u+w, v);
+			pv[2].a_uv = v2(u+w, v+h);
+			pv[3].a_uv = v2(u,   v+h);
+		}
+		pv += 4;
+	}
+	return n_missing;
+}
+
 
 #define FF_END_MODE         (1<<0)
 #define FF_END_FRAME        (1<<1)
 #define FF_VTXBUF_OVERFLOW  (1<<2)
 #define FF_IDXBUF_OVERFLOW  (1<<3)
+#define FF__REENTRY         (1<<4)
 static void r_flush(int flags)
 {
-	assert(((flags == FF_END_MODE) || (flags == FF_END_FRAME) || ((flags&FF_VTXBUF_OVERFLOW) || (flags&FF_IDXBUF_OVERFLOW))) && "invalid r_flush() flags");
+	assert(((flags == FF_END_MODE) || (flags == FF_END_FRAME) || ((flags&FF_VTXBUF_OVERFLOW) || (flags&FF_IDXBUF_OVERFLOW) || (flags&FF__REENTRY))) && "invalid r_flush() flags");
 
 	struct r* r = &rstate;
 	assert(r->vtxbuf_cursor >= r->cursor0);
-	const int n = (r->vtxbuf_cursor - r->cursor0);
+	const int n_bytes = (r->vtxbuf_cursor - r->cursor0);
+	assert(n_bytes >= 0);
 
 	const int is_end_mode         = flags & FF_END_MODE;
 	const int is_end_frame        = flags & FF_END_FRAME;
 	const int is_vtxbuf_overflow  = flags & FF_VTXBUF_OVERFLOW;
 	const int is_idxbuf_overflow  = flags & FF_IDXBUF_OVERFLOW;
+	const int is_reentry          = flags & FF__REENTRY;
 
-	assert((!is_end_frame || n == 0) && "cannot end frame with elements still in vtxbuf");
+	assert((!is_end_frame || n_bytes == 0) && "cannot end frame with elements still in vtxbuf");
 
-	const int do_pass   = (n > 0) && (is_end_mode || is_vtxbuf_overflow || is_idxbuf_overflow);
-	const int do_submit = is_end_frame || is_vtxbuf_overflow;
+	const int do_pass   = (n_bytes > 0) && (is_end_mode || is_vtxbuf_overflow || is_idxbuf_overflow);
+	int do_submit = is_end_frame || is_vtxbuf_overflow;
 
 	if (r->encoder == NULL) {
 		r->encoder = wgpuDeviceCreateCommandEncoder(r->device, &(WGPUCommandEncoderDescriptor){});
@@ -371,6 +588,76 @@ static void r_flush(int flags)
 	if (do_pass) {
 		assert(r->mode > 0);
 		assert(!is_end_frame && "not expecting to emit render passes during ''end frame''");
+
+		if (r->mode == R_MODE_TILE) {
+			const int has_previous_tile_pass = (r->n_tile_passes++) > 0;
+
+			const int n_divisor = 4*sizeof(struct tile_vtx);
+			assert((n_bytes % n_divisor) == 0);
+			const int n_quads = n_bytes / n_divisor;
+			assert(n_quads < MAX_TILE_QUADS);
+			int n_missing = 0;
+			struct tile_atlas* a = &r->tile_atlas;
+
+			if (is_reentry) {
+				arrsetlen(a->rects_arr, 0);
+				n_missing = n_quads;
+				memcpy(r->missing_glyphdefs, r->glyphdef_requests, n_missing * sizeof(*r->missing_glyphdefs));
+			} else {
+				n_missing = patch_tile_uvs(n_quads);
+			}
+
+			if (n_missing > 0) {
+				qsort(r->missing_glyphdefs, n_missing, sizeof r->missing_glyphdefs[0], glyphdef_compar);
+
+				union glyphdef last_glyphdef = {.u32=-1};
+				const int r0 = arrlen(a->rects_arr);
+				for (int i = 0; i < n_missing; i++) {
+					union glyphdef missing_glyphdef = r->missing_glyphdefs[i];
+					if (missing_glyphdef.u32 == last_glyphdef.u32) continue;
+
+					int w=0, h=0;
+					get_glyph_dim(missing_glyphdef, &w, &h);
+					stbrp_rect r = { .id = missing_glyphdef.u32, .w = w, .h = h };
+					arrput(a->rects_arr, r);
+
+					last_glyphdef = missing_glyphdef;
+				}
+				const int r1 = arrlen(a->rects_arr);
+				assert(r1 > r0);
+
+				if (r0 == 0) {
+					const int n_nodes = ATLAS_WIDTH;
+					a->nodes = realloc(a->nodes, n_nodes * sizeof(*a->nodes));
+					stbrp_init_target(&a->ctx, ATLAS_WIDTH, ATLAS_HEIGHT, a->nodes, n_nodes);
+					//const int n_pixels = ATLAS_WIDTH * ATLAS_HEIGHT;
+					//assert(n_pixels > 0);
+					//a->bitmap = realloc(a->bitmap, n_pixels * sizeof(*a->bitmap));
+				}
+
+				int success = stbrp_pack_rects(
+					&a->ctx,
+					&a->rects_arr[r0],
+					r1-r0);
+				if (success) {
+					for (int i = r0; i < r1; i++) {
+						glyph_raster(&a->rects_arr[i]);
+					}
+					qsort(a->rects_arr, arrlen(a->rects_arr), sizeof *a->rects_arr, stbrect_compar);
+					assert(patch_tile_uvs(n_quads) == 0);
+				} else {
+					assert(!"TODO atlas overflow"); // TODO
+					if (has_previous_tile_pass) {
+						do_submit = 1;
+						// TODO? must first flush / submit queue, NOT including THIS pass, then try again with reentry
+						if (is_reentry) {
+							// XXX nothing we can do; already tried flushing?
+						}
+					}
+				}
+			}
+		}
+
 		assert(r->encoder != NULL);
 		assert(r->render_target_texture_view != NULL);
 
@@ -395,7 +682,7 @@ static void r_flush(int flags)
 		assert(r->bind_group != NULL);
 		wgpuRenderPassEncoderSetBindGroup(pass, 0, r->bind_group, 0, 0);
 
-		wgpuRenderPassEncoderSetVertexBuffer(pass, 0, r->vtxbuf, r->cursor0, n);
+		wgpuRenderPassEncoderSetVertexBuffer(pass, 0, r->vtxbuf, r->cursor0, n_bytes);
 
 		wgpuRenderPassEncoderSetIndexBuffer(
 			pass,
@@ -424,6 +711,32 @@ static void r_flush(int flags)
 			r->vtxbuf_cursor = 0;
 		}
 		assert(r->vtxbuf_cursor == 0);
+
+		struct tile_atlas* a = &rstate.tile_atlas;
+		if (a->update) {
+			const int h = a->update_y1 - a->update_y0;
+			wgpuQueueWriteTexture(
+				r->queue,
+				&(WGPUImageCopyTexture) {
+					.texture = a->texture,
+					.origin = {
+						.x = 0,
+						.y = a->update_y0,
+					},
+				},
+				a->bitmap + a->update_y0 * ATLAS_WIDTH,
+				ATLAS_WIDTH * h,
+				&(WGPUTextureDataLayout) {
+					.bytesPerRow = ATLAS_WIDTH,
+				},
+				&(WGPUExtent3D) {
+					.width = ATLAS_WIDTH,
+					.height = h,
+					.depthOrArrayLayers = 1,
+				}
+			);
+			a->update = 0;
+		}
 
 		if (is_end_frame) {
 			postproc_end_frame(r->encoder);
@@ -469,6 +782,7 @@ void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextu
 	assert(r->vtxbuf_cursor == 0);
 
 	r->n_passes = 0;
+	r->n_tile_passes = 0;
 	assert(r->n_static_quad_indices == 0);
 	r->render_target_texture_view = postproc_begin_frame(width, height, ppw, swap_chain_texture_view);
 
@@ -608,14 +922,35 @@ static int utf8_decode(const char** c0z, int* n)
 	return -1;
 }
 
-static struct font* get_font_for_bank(int bank)
+static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 {
-	struct r* r = &rstate;
-	switch (bank) {
-	case R_FONT_MONOSPACE: return &r->font_monospace;
-	case R_FONT_VARIABLE:  return &r->font_variable;
-	default: assert(!"invalid font");
-	}
+	assert(rstate.mode == R_MODE_TILE);
+
+	struct tile_vtx* pv = r_request(4 * sizeof(*pv), 6);
+
+	union v2 dst = v2(x,y);
+
+	union v2 d1 = v2(w,0);
+	union v2 d2 = v2(w,h);
+	union v2 d3 = v2(0,h);
+
+	// NOTE a_uv is set by r_flush()
+
+	pv[0].a_pos   = dst;
+	pv[0].a_color = rstate.color0;
+
+	pv[1].a_pos   = v2_add(dst, d1);
+	pv[1].a_color = rstate.color1;
+
+	pv[2].a_pos   = v2_add(dst, d2);
+	pv[2].a_color = rstate.color2;
+
+	pv[3].a_pos   = v2_add(dst, d3);
+	pv[3].a_color = rstate.color3;
+
+	const int index = ((rstate.vtxbuf_cursor - rstate.cursor0) / (4*sizeof(*pv))) - 1;
+	assert(0 <= index && index < MAX_TILE_QUADS);
+	rstate.glyphdef_requests[index] = encode_glyphdef(bank, size, code);
 }
 
 void rt_printf(const char* fmt, ...)
@@ -668,9 +1003,9 @@ void rt_printf(const char* fmt, ...)
 			const int h = y1-y0;
 
 			if (w > 0 && h > 0) {
-				//const int lsb = (int)roundf((float)left_side_bearing * scale);
+				const int lsb = (int)roundf((float)left_side_bearing * scale);
 				//printf("plot %d at %d,%d %dx%d\n", codepoint, cursor_x + lsb, cursor_y + y0, w, h);
-				//draw_gt(bank, codepoint, cursor_x + lsb, cursor_y + y0, w, h);
+				rt_put(rstate.font, rstate.font_px, codepoint, cursor_x + lsb, cursor_y + y0, w, h);
 			}
 
 			cursor_x += dx;
