@@ -14,6 +14,7 @@
 #include "stb_truetype.h"
 
 #include "embedded_resources.h"
+#include "r_tile.h"
 
 // couldn't convince myself that dynamic atlas resizing is worth the trouble :)
 // having to flush early when the atlas overflows is bad enough, but dynamic

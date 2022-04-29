@@ -14,7 +14,7 @@ stb_rect_pack.o: stb_rect_pack.c stb_rect_pack.h
 stb_truetype.o: stb_truetype.c stb_truetype.h
 sokol_time.o: sokol_time.c sokol_time.h
 gpudl.o: gpudl.c gpudl.h
-mprg.o: mprg.c stb_ds.h sokol_time.h common.h gpudl.h fps.h pwr.h stb_rect_pack.h stb_truetype.h embedded_resources.h
+mprg.o: mprg.c stb_ds.h sokol_time.h common.h gpudl.h fps.h pwr.h stb_rect_pack.h stb_truetype.h embedded_resources.h r_tile.h
 mprg: mprg.o stb_ds.o sokol_time.o gpudl.o embedded_resources.o stb_rect_pack.o stb_truetype.o
 
 clean:
