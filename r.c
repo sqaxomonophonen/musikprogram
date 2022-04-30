@@ -165,6 +165,13 @@ struct font {
 	int line_gap;
 };
 
+struct linestuff {
+	int index;
+	union v2 ps[3];
+	float dot_threshold;
+	float width;
+};
+
 struct r {
 	WGPUInstance instance;
 	WGPUAdapter adapter;
@@ -190,7 +197,6 @@ struct r {
 	int n_tile_passes;
 	int n_passes;
 	int mode;
-	//struct window* window;
 	WGPUTextureView render_target_texture_view;
 	int cursor0;
 	int n_static_quad_indices;
@@ -220,6 +226,8 @@ struct r {
 	int scissor_y;
 	int scissor_width;
 	int scissor_height;
+
+	struct linestuff linestuff;
 } rstate;
 
 static void font_init(struct font* font, void* data, int index)
@@ -1165,6 +1173,158 @@ void rr_quad(float x, float y, float w, float h)
 	}
 }
 
+void rv_line_width(float w)
+{
+	rstate.linestuff.width = w;
+}
+
+static void lineflush(union v2* p3)
+{
+	// line between p1 and p2, in the sequence [p0,p1,p2,p3]
+	struct linestuff* ls = &rstate.linestuff;
+	if (ls->index < 2) return;
+	union v2* p2 =                  &ls->ps[(ls->index-1)%3];
+	union v2* p1 =                  &ls->ps[(ls->index-2)%3];
+	union v2* p0 = ls->index >= 3 ? &ls->ps[(ls->index-3)%3] : NULL;
+
+	union v2 u12 = v2_unit(v2_sub(*p2, *p1));
+	union v2 n12 = v2_normal(u12);
+
+	union v2 ns[2];
+	for (int c = 0; c < 2; c++) {
+		union v2* e0;
+		union v2* e1;
+		float sign;
+		if (c == 0) {
+			e0 = p0;
+			e1 = p1;
+			sign = 1.0f;
+		} else {
+			e0 = p3;
+			e1 = p2;
+			sign = -1.0f;
+		}
+		union v2 n = n12;
+		if (e0 != NULL) {
+			union v2 u01 = v2_scale(sign, v2_unit(v2_sub(*e1, *e0)));
+			if (v2_dot(u01, u12) > ls->dot_threshold) {
+				n = v2_unit(v2_add(n, v2_normal(u01)));
+			}
+		}
+		ns[c] = v2_scale(1.0f / v2_dot(n,n12), n);
+	}
+
+	const float mid_width = ls->width-1.0f;
+	float side_width = mid_width > 0.0f ? 1.0f : 1.0f+mid_width;
+	if (side_width <= 0.0f) return;
+
+	const float mt = mid_width < 0.0f ? 0.0f : mid_width*0.5f;
+
+	assert(rstate.mode == R_MODE_VECTOR);
+	const int has_mid = mid_width > 0.0f;
+	const int n_quads = has_mid ? 3 : 2;
+	struct vector_vtx* pv = r_request(n_quads*4*sizeof(*pv), n_quads*6);
+
+	union c16 cz = {0};
+	union c16 cs = rstate.color0; // TODO scale by side_width
+
+	for (int lane = 0; lane < 3; lane++) {
+		float t0,t1;
+		union c16 c0,c1;
+		if (lane == 0) {
+			t0 = -mt-side_width;
+			t1 = t0+side_width;
+			c0 = cz;
+			c1 = cs;
+		} else if (lane == 1) {
+			t0 = mt;
+			t1 = t0+side_width;
+			c0 = cs;
+			c1 = cz;
+		} else if (lane == 2) {
+			if (!has_mid) continue;
+			t0 = -mt;
+			t1 = mt;
+			c0 = cs;
+			c1 = cs;
+		} else {
+			assert(!"UNREACHABLE");
+		}
+
+		pv[0].a_pos   = v2_add(*p1, v2_scale(t0, ns[0]));
+		pv[0].a_color = c0;
+
+		pv[1].a_pos   = v2_add(*p2, v2_scale(t0, ns[1]));
+		pv[1].a_color = c0;
+
+		pv[2].a_pos   = v2_add(*p2, v2_scale(t1, ns[1]));
+		pv[2].a_color = c1;
+
+		pv[3].a_pos   = v2_add(*p1, v2_scale(t1, ns[0]));
+		pv[3].a_color = c1;
+
+		pv += 4;
+	}
+}
+
+void rv_move_to(float x, float y)
+{
+	struct linestuff* ls = &rstate.linestuff;
+	if (ls->index >= 2) rv_end_path();
+	ls->ps[0] = v2(x,y);
+	ls->index = 1;
+}
+
+void rv_line_to(float x, float y)
+{
+	struct linestuff* ls = &rstate.linestuff;
+	union v2 p = v2(x,y);
+	if (ls->index >= 2) lineflush(&p);
+	ls->ps[(ls->index++)%3] = p;
+}
+
+void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
+{
+	// TODO Ramer–Douglas–Peucker algorithm? or something better?
+	struct linestuff* ls = &rstate.linestuff;
+	assert((ls->index-1)>=0);
+	union v2 p0 = ls->ps[(ls->index-1)%3];
+	union v2 p1 = v2(cx0,cy0);
+	union v2 p2 = v2(cx1,cy1);
+	union v2 p3 = v2(x,y);
+	const int N = 75;
+	for (int i = 1; i <= N; i++) {
+		const float t = (float)i / (float)N;
+		const float ts = t*t;   // t^2
+		const float tss = ts*t; // t^3
+		const float t1 = 1.0f - t; // (1-t)
+		const float t1s = t1*t1;   // (1-t)^2
+		const float t1ss = t1s*t1; // (1-t)^3
+		const float c0 = t1ss;
+		const float c1 = 3.0f * t1s * t;
+		const float c2 = 3.0f * t1 * ts;
+		const float c3 = tss;
+
+		union v2 p = v2_scale(c0, p0);
+		p = v2_add(p, v2_scale(c1, p1));
+		p = v2_add(p, v2_scale(c2, p2));
+		p = v2_add(p, v2_scale(c3, p3));
+
+		rv_line_to(p.x, p.y);
+	}
+}
+
+void rv_end_path()
+{
+	lineflush(NULL);
+}
+
+static void linestuff_set_min_angle(float min_angle)
+{
+	struct linestuff* ls = &rstate.linestuff;
+	ls->dot_threshold = cosf(PI + ((min_angle * (1.0f/360.0f)) * PI2));
+}
+
 void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQueue queue)
 {
 	rstate.instance = instance;
@@ -1216,6 +1376,9 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
         #undef DUMP64
         #undef DUMP32
         #endif
+
+	linestuff_set_min_angle(20.0f);
+	rv_line_width(2.0f);
 
 	font_init(&rstate.font_monospace, fontdata_mono, 0);
 	font_init(&rstate.font_variable, fontdata_variable, 0);

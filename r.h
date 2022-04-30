@@ -60,6 +60,11 @@ void r_color_ygrad(union v4 color0, union v4 color1);
 
 // R_MODE_VECTOR
 void rv_quad(float x, float y, float w, float h);
+void rv_line_width(float w);
+void rv_move_to(float x, float y);
+void rv_line_to(float x, float y);
+void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y);
+void rv_end_path();
 
 // R_MODE_TILE
 void rt_font(enum r_font font, int px);
