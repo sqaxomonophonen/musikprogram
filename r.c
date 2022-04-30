@@ -337,9 +337,9 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 			.height = ppw->height,
 			.seed = rstate.seed,
 			.sigma = 0.003f,
-			.rstep = 17.31f,
-			.broken = 0.1f,
-			.intensity = 0.7f,
+			.rstep = 15.31f,
+			.broken = 0.0f,
+			.intensity = 0.4f,
 			.n0 = 3,
 			.n1 = 4,
 		};

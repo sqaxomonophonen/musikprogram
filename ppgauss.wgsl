@@ -87,7 +87,7 @@ fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 	loop {
 		if (i0 >= u.n0) { break; }
 		var r = u.rstep * f32(i0) + rnd(in.xy, u.seed) * broken_rstep - broken_rstep*0.5;
-		var scalar = exp(-(r*r*u.sigma)) * acc_scalar;
+		var scalar = exp(-(r*r*u.sigma)) * acc_scalar * r * 0.1;
 		var i1 = i32(0);
 		loop {
 			if (i1 >= u.n1) { break; }
