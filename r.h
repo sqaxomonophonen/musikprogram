@@ -68,5 +68,8 @@ void rt_printf(const char* fmt, ...);
 void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
 
+// R_MODE_VECTOR or R_MODE_TILE
+void rr_quad(float x, float y, float w, float h);
+
 #define R_H
 #endif

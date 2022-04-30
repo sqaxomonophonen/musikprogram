@@ -1155,6 +1155,16 @@ void rv_quad(float x, float y, float w, float h)
 	pv[3].a_color = r->color3;
 }
 
+void rr_quad(float x, float y, float w, float h)
+{
+	struct r* r = &rstate;
+	switch (r->mode) {
+	case R_MODE_VECTOR: rv_quad(x,y,w,h); break;
+	case R_MODE_TILE:   rt_quad(x,y,w,h); break;
+	default: assert(!"mode must be R_MODE_VECTOR or R_MODE_TILE");
+	}
+}
+
 void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQueue queue)
 {
 	rstate.instance = instance;
