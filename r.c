@@ -214,6 +214,12 @@ struct r {
 
 	union glyphdef glyphdef_requests[MAX_TILE_QUADS];
 	union glyphdef missing_glyphdefs[MAX_TILE_QUADS];
+
+	int scissor;
+	int scissor_x;
+	int scissor_y;
+	int scissor_width;
+	int scissor_height;
 } rstate;
 
 static void font_init(struct font* font, void* data, int index)
@@ -716,6 +722,10 @@ static void r_flush(int flags)
 			}
 		);
 
+		if (r->scissor) {
+			wgpuRenderPassEncoderSetScissorRect(pass, r->scissor_x, r->scissor_y, r->scissor_width, r->scissor_height);
+		}
+
 		assert(r->pipeline != NULL);
 		wgpuRenderPassEncoderSetPipeline(pass, r->pipeline);
 
@@ -836,6 +846,22 @@ void r_end()
 	struct r* r = &rstate;
 	assert(r->mode > 0);
 	r->mode = 0;
+}
+
+void r_scissor(int x, int y, int width, int height)
+{
+	struct r* r = &rstate;
+	r->scissor = 1;
+	r->scissor_x = x;
+	r->scissor_y = y;
+	r->scissor_width = width;
+	r->scissor_height = height;
+}
+
+void r_no_scissor()
+{
+	struct r* r = &rstate;
+	r->scissor = 0;
 }
 
 static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)

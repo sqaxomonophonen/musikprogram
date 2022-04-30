@@ -51,6 +51,9 @@ void r_end_frame();
 void r_begin(int mode);
 void r_end();
 
+void r_scissor(int x, int y, int width, int height);
+void r_no_scissor();
+
 void r_color_plain(union v4 color);
 void r_color_xgrad(union v4 color0, union v4 color1);
 void r_color_ygrad(union v4 color0, union v4 color1);
