@@ -31,9 +31,9 @@ enum r_tile_group {
 	DEF_TILE(N ## _x2y2, G, W,   H,    0,  0, EXPR)
 
 #define TILES \
-	DEF_TILE0(box,  boxes,  1.0, 1.0, CSQR(1.0)) \
-	DEF_TILE0(box2, boxes2, 1.0, 1.0, CSQR(1.0)) \
-	DEF_TILE3x3(boxy, boxes, 1.0, 1.0, CSQR(1.0) && !CSQR(0.5))
+	DEF_TILE0(box,  boxes,  1.0, 1.0, Circle(1.0)) \
+	DEF_TILE0(box2, boxes2, 1.0, 1.0, Circle(1.0)) \
+	DEF_TILE3x3(boxy, boxes, 1.0, 1.0, Circle(1.0) && !Circle(0.707))
 
 enum r_tile {
 	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) RT_ ## N,

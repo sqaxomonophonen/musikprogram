@@ -3,7 +3,7 @@
 #include "common.h"
 #include "r_tile.h"
 
-#define CSQR(r) (v2_dot(p,p)<r)
+#define Circle(r) (v2_dot(p,p)<=(r*r))
 
 void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 {

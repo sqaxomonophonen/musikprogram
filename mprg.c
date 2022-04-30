@@ -187,7 +187,7 @@ int main(int argc, char** argv)
 				const float S = 50;
 				r_color_plain(v4(1.5,0,0,0));
 				rv_quad(window->width/2-S, 0, S*2, window->height);
-				r_color_plain(v4(0,0,2,0.9));
+				r_color_plain(v4(0,0,0.6,0.0));
 				rv_quad(0, window->height/2-S, window->width, S*2);
 
 			}
