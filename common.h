@@ -50,6 +50,8 @@ static inline union v2 v2_normal(union v2 a) { return v2(a.y, -a.x); }
 
 static inline union v4 v4(float x, float y, float z, float w) { return (union v4) {.x=x, .y=y, .z=z, .w=w}; }
 
+static inline union v4 v4_scale(float scalar, union v4 a) { return v4(a.x*scalar, a.y*scalar, a.z*scalar, a.w*scalar); }
+
 // pre-multiplied alpha color constructors
 static inline union v4 pma_add(float r, float g, float b) { return (union v4) {.r=r, .g=g, .b=b, .a=0}; }
 static inline union v4 pma_alpha(float r, float g, float b, float a) { return (union v4) {.r=r*a, .g=g*a, .b=b*a, .a=a}; }

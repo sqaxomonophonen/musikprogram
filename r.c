@@ -80,11 +80,27 @@ static inline uint16_t fto16(float v)
 	return roundf(v * 65535.0f);
 }
 
-static inline void c16pak(union c16* c, union v4* rgba)
+static inline float u16tof(uint16_t v)
 {
+	return (float)v * (1.0f / 65535.0f);
+}
+
+static inline union c16 c16pak(union v4 rgba)
+{
+	union c16 c;
 	const float s = 1.0f / MAX_INTENSITY;
-	for (int i = 0; i < 3; i++) c->c[i] = fto16(rgba->s[i] * s);
-	c->c[3] = fto16(rgba->s[3]);
+	for (int i = 0; i < 3; i++) c.c[i] = fto16(rgba.s[i] * s);
+	c.c[3] = fto16(rgba.s[3]);
+	return c;
+}
+
+static inline union v4 c16unpak(union c16 c)
+{
+	return v4(
+		u16tof(c.c[0]) * MAX_INTENSITY,
+		u16tof(c.c[1]) * MAX_INTENSITY,
+		u16tof(c.c[2]) * MAX_INTENSITY,
+		u16tof(c.c[3]));
 }
 
 struct ppgauss_uni {
@@ -900,7 +916,7 @@ static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 void r_color_plain(union v4 color)
 {
 	struct r* r = &rstate;
-	c16pak(&r->color0, &color);
+	r->color0 = c16pak(color);
 	r->color1 = r->color0;
 	r->color2 = r->color0;
 	r->color3 = r->color0;
@@ -909,8 +925,8 @@ void r_color_plain(union v4 color)
 void r_color_xgrad(union v4 color0, union v4 color1)
 {
 	struct r* r = &rstate;
-	c16pak(&r->color0, &color0);
-	c16pak(&r->color1, &color1);
+	r->color0 = c16pak(color0);
+	r->color1 = c16pak(color1);
 	r->color2 = r->color1;
 	r->color3 = r->color0;
 }
@@ -918,9 +934,9 @@ void r_color_xgrad(union v4 color0, union v4 color1)
 void r_color_ygrad(union v4 color0, union v4 color1)
 {
 	struct r* r = &rstate;
-	c16pak(&r->color0, &color0);
+	r->color0 = c16pak(color0);
 	r->color1 = r->color0;
-	c16pak(&r->color2, &color1);
+	r->color2 = c16pak(color1);
 	r->color3 = r->color2;
 }
 
@@ -1226,7 +1242,7 @@ static void lineflush(union v2* p3)
 	struct vector_vtx* pv = r_request(n_quads*4*sizeof(*pv), n_quads*6);
 
 	union c16 cz = {0};
-	union c16 cs = rstate.color0; // TODO scale by side_width
+	union c16 cs = c16pak(v4_scale(side_width, c16unpak(rstate.color0)));
 
 	for (int lane = 0; lane < 3; lane++) {
 		float t0,t1;
