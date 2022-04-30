@@ -13,8 +13,8 @@ void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 	const float sy = 1.0f / (float)h;
 	const int supersampling = 16;
 	const float ssi = 1.0f / (float)supersampling;
-	const int n_inside_max = supersampling*supersampling;
-	const float n_inside_scale = (1.0f / (float)n_inside_max);
+	const int sum_max = supersampling*supersampling;
+	const float sum_scale = (1.0f / (float)sum_max);
 	uint8_t* bp = bitmap;
 	int yinc = stride-w;
 	switch (tile) {
@@ -29,19 +29,18 @@ void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 			for (int y0 = 0; y0 < h; y0++) { \
 				float px0 = X0; \
 				for (int x0 = 0; x0 < w; x0++) { \
-					int n_inside = 0; \
+					float sum = 0.0f; \
 					float py1 = py0; \
 					for (int ssy = 0; ssy < supersampling; ssy++) { \
 						float px1 = px0; \
 						for (int ssx = 0; ssx < supersampling; ssx++) { \
 							union v2 p = v2(px1,py1); \
-							int inside = EXPR; \
-							if (inside) n_inside++; \
+							sum += (EXPR); \
 							px1 += x1step; \
 						} \
 						py1 += y1step; \
 					} \
-					float value = (float)n_inside * n_inside_scale; \
+					float value = sum * sum_scale; \
 					*(bp++) = f2u8(value); \
 					px0 += x0step; \
 				} \
