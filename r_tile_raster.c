@@ -1,18 +1,13 @@
 #include <assert.h>
 
+#include "common.h"
 #include "r_tile.h"
 
-void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
-{
-	assert(!"TODO");//TODO
-}
+#define CSQR(r) (v2_dot(p,p)<r)
 
-#if 0
 void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 {
-	assert(0 <= tile && tile < TI_END);
-	if (w == EXT) w = 1;
-	if (h == EXT) h = 1;
+	assert(0 <= tile && tile < RT_END);
 	assert(w > 0 && h > 0);
 	const float sx = 1.0f / (float)w;
 	const float sy = 1.0f / (float)h;
@@ -24,15 +19,15 @@ void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 	int yinc = stride-w;
 	switch (tile) {
 	// macro magic meets macro magic
-	#define TI(N,W,H,EXPR) \
-		case TI_ ## N: { \
+	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) \
+		case RT_ ## N: { \
 			const float x0step = W*sx; \
 			const float y0step = H*sy; \
 			const float x1step = x0step * ssi; \
 			const float y1step = y0step * ssi; \
-			float py0 = 0.0f; \
+			float py0 = Y0; \
 			for (int y0 = 0; y0 < h; y0++) { \
-				float px0 = 0.0f; \
+				float px0 = X0; \
 				for (int x0 = 0; x0 < w; x0++) { \
 					int n_inside = 0; \
 					float py1 = py0; \
@@ -55,8 +50,7 @@ void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 			} \
 		} break;
 	TILES
-	#undef TI
+	#undef DEF_TILE
 	default: assert(!"UNREACHABLE");
 	}
 }
-#endif

@@ -3,6 +3,8 @@
 #include "common.h"
 #include "gpudl.h"
 
+#include "r_tile.h"
+
 #define MAX_INTENSITY (16)
 
 enum {
@@ -58,8 +60,7 @@ void rv_quad(float x, float y, float w, float h);
 void rt_font(enum r_font font, int px);
 void rt_goto(int cx, int cy);
 void rt_printf(const char* fmt, ...);
-
-#include "r_tile.h"
+void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
 
 #define R_H
 #endif

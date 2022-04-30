@@ -424,9 +424,9 @@ static int get_glyph_index(union glyphdef glyphdef)
 }
 
 static float tile_dimensions_in_units[RT_END][2] = {
-	#define TT(N,G,W,H,DX,DY,EXPR) { (float)(W), (float)(H) },
+	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) { (float)(W), (float)(H) },
 	TILES
-	#undef TT
+	#undef DEF_TILE
 };
 
 static inline int getpx(float units, int size)
@@ -479,7 +479,6 @@ static void glyph_raster(stbrp_rect* r)
 	int bank = glyphdef.bank;
 	int size = glyphdef.size;
 	int code = glyphdef.code;
-	printf("glyph_raster() for bank=%d, size=%d, code=%d\n", bank, size, code);
 	uint64_t t0 = stm_now();
 	int w,h;
 	get_glyph_dim(glyphdef, &w, &h);
@@ -925,6 +924,7 @@ static int utf8_decode(const char** c0z, int* n)
 static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 {
 	assert(rstate.mode == R_MODE_TILE);
+	if ((w <= 0) || (h <= 0)) return;
 
 	struct tile_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
@@ -1015,6 +1015,74 @@ void rt_printf(const char* fmt, ...)
 
 	r->font_cx = cursor_x;
 	r->font_cy = cursor_y;
+}
+
+static int get_tile_px(enum r_tile t)
+{
+	return 8; // TODO tile group size configuration, or at least return default
+}
+
+void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
+{
+	assert(0 <= t00 && t00 < RT_END);
+	const int px = get_tile_px(t00);
+
+	const float wu = tile_dimensions_in_units[t00][0];
+	const float hu = tile_dimensions_in_units[t00][1];
+
+	assert((wu != EXT) && (hu != EXT) && "3x3 x0y0 cannot have EXT width nor height");
+
+	assert(EXT == tile_dimensions_in_units[t00+1][0]);
+	assert(EXT == tile_dimensions_in_units[t00+4][0]);
+	assert(EXT == tile_dimensions_in_units[t00+7][0]);
+	assert(wu  == tile_dimensions_in_units[t00+2][0]);
+	assert(wu  == tile_dimensions_in_units[t00+3][0]);
+	assert(wu  == tile_dimensions_in_units[t00+5][0]);
+	assert(wu  == tile_dimensions_in_units[t00+6][0]);
+	assert(wu  == tile_dimensions_in_units[t00+8][0]);
+
+	assert(EXT == tile_dimensions_in_units[t00+3][1]);
+	assert(EXT == tile_dimensions_in_units[t00+4][1]);
+	assert(EXT == tile_dimensions_in_units[t00+5][1]);
+	assert(hu  == tile_dimensions_in_units[t00+1][1]);
+	assert(hu  == tile_dimensions_in_units[t00+2][1]);
+	assert(hu  == tile_dimensions_in_units[t00+6][1]);
+	assert(hu  == tile_dimensions_in_units[t00+7][1]);
+	assert(hu  == tile_dimensions_in_units[t00+8][1]);
+
+	const int wpx = getpx(wu, px);
+	const int hpx = getpx(hu, px);
+	assert((wpx >= 1) && (hpx >= 1));
+
+	const int midw = w-2*wpx;
+	const int midh = h-2*hpx;
+
+	const int bank = R_TILES;
+
+	if (midw < 0 || midh < 0) {
+		// no room for corners; just plot the middle
+		rt_put(bank, px, t00+4, x, y, w, h);
+		return;
+	}
+
+	const int x0 = x;
+	const int x1 = x+wpx;
+	const int x2 = x+w-wpx;
+	const int y0 = y;
+	const int y1 = y+hpx;
+	const int y2 = y+h-hpx;
+
+	rt_put(bank, px, t00+0, x0, y0, wpx,  hpx);
+	rt_put(bank, px, t00+1, x1, y0, midw, hpx);
+	rt_put(bank, px, t00+2, x2, y0, wpx,  hpx);
+
+	rt_put(bank, px, t00+3, x0, y1, wpx,  midh);
+	rt_put(bank, px, t00+4, x1, y1, midw, midh);
+	rt_put(bank, px, t00+5, x2, y1, wpx,  midh);
+
+	rt_put(bank, px, t00+6, x0, y2, wpx,  hpx);
+	rt_put(bank, px, t00+7, x1, y2, midw, hpx);
+	rt_put(bank, px, t00+8, x2, y2, wpx,  hpx);
 }
 
 void rv_quad(float x, float y, float w, float h)
