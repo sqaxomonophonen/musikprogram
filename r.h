@@ -51,7 +51,10 @@ void r_end_frame();
 void r_begin(int mode);
 void r_end();
 
-void r_scissor(int x, int y, int width, int height);
+void r_enter(int x, int y, int w, int h);
+void r_leave();
+
+void r_scissor();
 void r_no_scissor();
 
 void r_color_plain(union v4 color);
@@ -72,9 +75,7 @@ void rt_goto(int cx, int cy);
 void rt_printf(const char* fmt, ...);
 void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
-
-// R_MODE_VECTOR or R_MODE_TILE
-void rr_quad(float x, float y, float w, float h);
+void rt_clear();
 
 #define R_H
 #endif

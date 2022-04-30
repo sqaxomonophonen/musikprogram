@@ -45,6 +45,12 @@
 #define GLYPHDEF_SIZE_BITS (9)
 #define GLYPHDEF_BANK_BITS (2)
 
+#define MAX_REGION_STACK_SIZE (256)
+
+struct region {
+	int x,y,w,h;
+};
+
 union glyphdef {
 	uint32_t u32;
 	struct {
@@ -194,6 +200,9 @@ struct r {
 	WGPUDevice device;
 	WGPUQueue queue;
 
+	int width;
+	int height;
+
 	WGPUBuffer static_quad_idxbuf;
 	WGPUBuffer vtxbuf;
 
@@ -244,6 +253,9 @@ struct r {
 	int scissor_height;
 
 	struct linestuff linestuff;
+
+	int region_stack_size;
+	struct region region_stack[MAX_REGION_STACK_SIZE];
 } rstate;
 
 static void font_init(struct font* font, void* data, int index)
@@ -264,8 +276,10 @@ static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
 	return shader;
 }
 
-static WGPUTextureView postproc_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextureView swap_chain_texture_view)
+static WGPUTextureView postproc_begin_frame(struct postproc_window* ppw, WGPUTextureView swap_chain_texture_view)
 {
+	const int width = rstate.width;
+	const int height = rstate.height;
 	struct postproc* pp = &rstate.postproc;
 	//struct postproc_window* ppw = &window->ppw;
 	ppw->swap_chain_texture_view = swap_chain_texture_view;
@@ -805,6 +819,9 @@ void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextu
 {
 	struct r* r = &rstate;
 
+	r->width = width;
+	r->height = height;
+
 	assert((r->begun_frames) && "not inside r_begin_frames()");
 	assert((!r->begun_frame) && "already inside r_begin_frame()");
 
@@ -813,7 +830,7 @@ void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextu
 	r->n_passes = 0;
 	r->n_tile_passes = 0;
 	assert(r->n_static_quad_indices == 0);
-	r->render_target_texture_view = postproc_begin_frame(width, height, ppw, swap_chain_texture_view);
+	r->render_target_texture_view = postproc_begin_frame(ppw, swap_chain_texture_view);
 
 	enum postproc_type t = r->postproc.type;
 	const float scalar =
@@ -872,19 +889,71 @@ void r_end()
 	r->mode = 0;
 }
 
-void r_scissor(int x, int y, int width, int height)
+static inline void get_region(int* x, int* y, int* w, int* h)
 {
 	struct r* r = &rstate;
+	if (r->region_stack_size > 0) {
+		struct region* rg = &r->region_stack[r->region_stack_size-1];
+		if (x) *x = rg->x;
+		if (y) *y = rg->y;
+		if (w) *w = rg->w;
+		if (h) *h = rg->h;
+	} else {
+		if (x) *x = 0;
+		if (y) *y = 0;
+		if (w) *w = r->width;
+		if (h) *h = r->height;
+	}
+}
+
+static inline void get_origin(int* x, int* y)
+{
+	get_region(x,y,NULL,NULL);
+}
+
+static inline union v2 get_origin_v2()
+{
+	int x,y;
+	get_origin(&x,&y);
+	return v2(x,y);
+}
+
+void r_enter(int x, int y, int w, int h)
+{
+	struct r* r = &rstate;
+	assert(r->region_stack_size < MAX_REGION_STACK_SIZE);
+	int x0,y0,w0,h0;
+	get_region(&x0,&y0,&w0,&h0);
+	if (x < 0) x = 0;
+	if (y < 0) y = 0;
+	if (x+w > w0) w = w0-x;
+	if (y+h > h0) h = h0-y;
+	struct region* rg = &r->region_stack[r->region_stack_size++];
+	rg->x = x0+x;
+	rg->y = y0+y;
+	rg->w = w;
+	rg->h = h;
+}
+
+void r_leave()
+{
+	struct r* r = &rstate;
+	assert(r->region_stack_size > 0);
+	r->region_stack_size--;
+}
+
+void r_scissor()
+{
+	struct r* r = &rstate;
+	assert((r->mode == 0) && "scissor must be activated outside of r_begin()/r_end()");
 	r->scissor = 1;
-	r->scissor_x = x;
-	r->scissor_y = y;
-	r->scissor_width = width;
-	r->scissor_height = height;
+	get_region(&r->scissor_x, &r->scissor_y, &r->scissor_width, &r->scissor_height);
 }
 
 void r_no_scissor()
 {
 	struct r* r = &rstate;
+	assert((r->mode == 0) && "scissor must be deactivated outside of r_begin()/r_end()");
 	r->scissor = 0;
 }
 
@@ -992,24 +1061,23 @@ static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 
 	struct tile_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
-	union v2 dst = v2(x,y);
+	const union v2 dst = v2(x,y);
+	const union v2 o = get_origin_v2();
 
-	union v2 d1 = v2(w,0);
-	union v2 d2 = v2(w,h);
-	union v2 d3 = v2(0,h);
+	// TODO clip if entirely outside region
 
 	// NOTE a_uv is set by r_flush()
 
-	pv[0].a_pos   = dst;
+	pv[0].a_pos   = v2_add(dst, v2( +o.x,  +o.y));
 	pv[0].a_color = rstate.color0;
 
-	pv[1].a_pos   = v2_add(dst, d1);
+	pv[1].a_pos   = v2_add(dst, v2(w+o.x,  +o.y));
 	pv[1].a_color = rstate.color1;
 
-	pv[2].a_pos   = v2_add(dst, d2);
+	pv[2].a_pos   = v2_add(dst, v2(w+o.x, h+o.y));
 	pv[2].a_color = rstate.color2;
 
-	pv[3].a_pos   = v2_add(dst, d3);
+	pv[3].a_pos   = v2_add(dst, v2( +o.x, h+o.y));
 	pv[3].a_color = rstate.color3;
 
 	const int index = ((rstate.vtxbuf_cursor - rstate.cursor0) / (4*sizeof(*pv))) - 1;
@@ -1156,37 +1224,35 @@ void rt_quad(float x, float y, float w, float h)
 	rt_put(R_TILES, 0, RT_one, x, y, w, h);
 }
 
+void rt_clear()
+{
+	int w,h;
+	get_region(NULL,NULL,&w,&h);
+	rt_quad(0,0,w,h);
+}
+
 void rv_quad(float x, float y, float w, float h)
 {
+	const union v2 o = get_origin_v2();
 	struct r* r = &rstate;
 	assert(r->mode == R_MODE_VECTOR);
 	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
-	pv[0].a_pos.x = x;
-	pv[0].a_pos.y = y;
+	pv[0].a_pos.x = x + o.x;
+	pv[0].a_pos.y = y + o.y;
 	pv[0].a_color = r->color0;
 
-	pv[1].a_pos.x = x+w;
-	pv[1].a_pos.y = y;
+	pv[1].a_pos.x = x+w + o.x;
+	pv[1].a_pos.y = y   + o.y;
 	pv[1].a_color = r->color1;
 
-	pv[2].a_pos.x = x+w;
-	pv[2].a_pos.y = y+h;
+	pv[2].a_pos.x = x+w + o.x;
+	pv[2].a_pos.y = y+h + o.y;
 	pv[2].a_color = r->color2;
 
-	pv[3].a_pos.x = x;
-	pv[3].a_pos.y = y+h;
+	pv[3].a_pos.x = x   + o.x;
+	pv[3].a_pos.y = y+h + o.y;
 	pv[3].a_color = r->color3;
-}
-
-void rr_quad(float x, float y, float w, float h)
-{
-	struct r* r = &rstate;
-	switch (r->mode) {
-	case R_MODE_VECTOR: rv_quad(x,y,w,h); break;
-	case R_MODE_TILE:   rt_quad(x,y,w,h); break;
-	default: assert(!"mode must be R_MODE_VECTOR or R_MODE_TILE");
-	}
 }
 
 void rv_line_width(float w)
@@ -1287,14 +1353,14 @@ void rv_move_to(float x, float y)
 {
 	struct linestuff* ls = &rstate.linestuff;
 	if (ls->index >= 2) rv_end_path();
-	ls->ps[0] = v2(x,y);
+	ls->ps[0] = v2_add(v2(x,y), get_origin_v2());
 	ls->index = 1;
 }
 
 void rv_line_to(float x, float y)
 {
 	struct linestuff* ls = &rstate.linestuff;
-	union v2 p = v2(x,y);
+	union v2 p = v2_add(v2(x,y), get_origin_v2());
 	if (ls->index >= 2) lineflush(&p);
 	ls->ps[(ls->index++)%3] = p;
 }
@@ -1304,10 +1370,11 @@ void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
 	// TODO Ramer–Douglas–Peucker algorithm? or something better?
 	struct linestuff* ls = &rstate.linestuff;
 	assert((ls->index-1)>=0);
-	union v2 p0 = ls->ps[(ls->index-1)%3];
-	union v2 p1 = v2(cx0,cy0);
-	union v2 p2 = v2(cx1,cy1);
-	union v2 p3 = v2(x,y);
+	const union v2 o = get_origin_v2();
+	const union v2 p0 = ls->ps[(ls->index-1)%3];
+	const union v2 p1 = v2_add(v2(cx0,cy0), o);
+	const union v2 p2 = v2_add(v2(cx1,cy1), o);
+	const union v2 p3 = v2_add(v2(x,y), o);
 	const int N = 75;
 	for (int i = 1; i <= N; i++) {
 		const float t = (float)i / (float)N;
