@@ -52,6 +52,8 @@ void r_begin(int mode);
 void r_end();
 
 void r_color_plain(union v4 color);
+void r_color_xgrad(union v4 color0, union v4 color1);
+void r_color_ygrad(union v4 color0, union v4 color1);
 
 // R_MODE_VECTOR
 void rv_quad(float x, float y, float w, float h);

@@ -337,9 +337,9 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 			.height = ppw->height,
 			.seed = rstate.seed,
 			.sigma = 0.003f,
-			.rstep = 14.31f,
+			.rstep = 17.31f,
 			.broken = 0.1f,
-			.intensity = 0.4f,
+			.intensity = 0.7f,
 			.n0 = 3,
 			.n1 = 4,
 		};
@@ -874,6 +874,24 @@ void r_color_plain(union v4 color)
 	r->color1 = r->color0;
 	r->color2 = r->color0;
 	r->color3 = r->color0;
+}
+
+void r_color_xgrad(union v4 color0, union v4 color1)
+{
+	struct r* r = &rstate;
+	c16pak(&r->color0, &color0);
+	c16pak(&r->color1, &color1);
+	r->color2 = r->color1;
+	r->color3 = r->color0;
+}
+
+void r_color_ygrad(union v4 color0, union v4 color1)
+{
+	struct r* r = &rstate;
+	c16pak(&r->color0, &color0);
+	r->color1 = r->color0;
+	c16pak(&r->color2, &color1);
+	r->color3 = r->color2;
 }
 
 void rt_font(enum r_font font, int px)

@@ -80,7 +80,7 @@ fn rvec(d: f32, theta: f32) -> vec2<f32> {
 @stage(fragment)
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 	let I = 16.0; // MAX_INTENSITY (not sure I want to snprintf() myself out of this code duplication.. yet)
-	var acc = I * textureLoad(tex, vec2<i32>(in.xy), 0);
+	var acc = I * textureLoad(tex, vec2<i32>(in.xy), 0) * 0.4;
 	var i0 = 0;
 	var broken_rstep = u.rstep * (1.0 - u.broken);
 	var acc_scalar = (I / f32(u.n1)) * u.intensity;
