@@ -79,6 +79,7 @@ int main(int argc, char** argv)
 	struct PWR pwr = {0};
 	struct fps* fps = fps_new(60);
 
+	int iteration = 0;
 	int imax = MAX_INTENSITY;
 	while (mprg.n_windows > 0) {
 		int on_battery = PWR_on_battery(&pwr);
@@ -197,7 +198,7 @@ int main(int argc, char** argv)
 			r_begin(R_MODE_TILE);
 
 			r_color_plain(v4(0.0, 0.8, 0.0, 1.0));
-			rt_font(R_FONT_VARIABLE, 21);
+			rt_font(R_FONT_VARIABLE, 1+(iteration%500));
 			rt_goto(5, window->height-50);
 			rt_printf("hello       / fps=%.2f", fps->fps);
 
@@ -214,6 +215,7 @@ int main(int argc, char** argv)
 		r_end_frames();
 
 		if (fps_frame(fps)) printf("fps: %.2f / battery=%d\n", fps->fps, on_battery);
+		iteration++;
 	}
 
 	return EXIT_SUCCESS;

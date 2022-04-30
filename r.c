@@ -479,7 +479,7 @@ static void glyph_raster(stbrp_rect* r)
 	int bank = glyphdef.bank;
 	int size = glyphdef.size;
 	int code = glyphdef.code;
-	uint64_t t0 = stm_now();
+	//uint64_t t0 = stm_now();
 	int w,h;
 	get_glyph_dim(glyphdef, &w, &h);
 	if (w > 0 && h > 0) {
@@ -491,8 +491,8 @@ static void glyph_raster(stbrp_rect* r)
 			stbtt_MakeCodepointBitmap(&font->info, p, w, h, ATLAS_WIDTH, scale, scale, code);
 		}
 	}
-	uint64_t t1 = stm_now();
-	printf("glyph_raster() for bank=%d, size=%d, code=%d took %f seconds (%dx%d)\n", bank, size, code, (double)stm_ns(stm_diff(t1,t0))*1e-9, w, h);
+	//uint64_t t1 = stm_now();
+	//printf("glyph_raster() for bank=%d, size=%d, code=%d took %f seconds (%dx%d)\n", bank, size, code, (double)stm_ns(stm_diff(t1,t0))*1e-9, w, h);
 
 	const int ux0 = r->x;
 	const int uy0 = r->y;
@@ -553,6 +553,57 @@ static int patch_tile_uvs(int n_quads)
 	return n_missing;
 }
 
+static void r_flush_submit(int n_bytes, int is_end_frame)
+{
+	struct r* r = &rstate;
+	assert(r->encoder != NULL);
+
+	if (n_bytes > 0) {
+		assert(n_bytes <= r->vtxbuf_cursor);
+		wgpuQueueWriteBuffer(r->queue, r->vtxbuf, 0, &r->vtxbuf_data, n_bytes);
+		int remaining = r->vtxbuf_cursor - n_bytes;
+		if (remaining) {
+			memmove(r->vtxbuf_data, r->vtxbuf_data + n_bytes, remaining);
+		}
+		r->vtxbuf_cursor = remaining;
+		r->cursor0 = 0;
+	}
+
+	struct tile_atlas* a = &rstate.tile_atlas;
+	if (a->update) {
+		const int h = a->update_y1 - a->update_y0;
+		wgpuQueueWriteTexture(
+			r->queue,
+			&(WGPUImageCopyTexture) {
+				.texture = a->texture,
+				.origin = {
+					.x = 0,
+					.y = a->update_y0,
+				},
+			},
+			a->bitmap + a->update_y0 * ATLAS_WIDTH,
+			ATLAS_WIDTH * h,
+			&(WGPUTextureDataLayout) {
+				.bytesPerRow = ATLAS_WIDTH,
+			},
+			&(WGPUExtent3D) {
+				.width = ATLAS_WIDTH,
+				.height = h,
+				.depthOrArrayLayers = 1,
+			}
+		);
+		a->update = 0;
+	}
+
+	if (is_end_frame) {
+		postproc_end_frame(r->encoder);
+	}
+
+	WGPUCommandBuffer cmdbuf = wgpuCommandEncoderFinish(r->encoder, &(WGPUCommandBufferDescriptor){});
+	wgpuQueueSubmit(r->queue, 1, &cmdbuf);
+	r->encoder = NULL;
+}
+
 
 #define FF_END_MODE         (1<<0)
 #define FF_END_FRAME        (1<<1)
@@ -595,16 +646,9 @@ static void r_flush(int flags)
 			assert((n_bytes % n_divisor) == 0);
 			const int n_quads = n_bytes / n_divisor;
 			assert(n_quads < MAX_TILE_QUADS);
-			int n_missing = 0;
 			struct tile_atlas* a = &r->tile_atlas;
 
-			if (is_reentry) {
-				arrsetlen(a->rects_arr, 0);
-				n_missing = n_quads;
-				memcpy(r->missing_glyphdefs, r->glyphdef_requests, n_missing * sizeof(*r->missing_glyphdefs));
-			} else {
-				n_missing = patch_tile_uvs(n_quads);
-			}
+			const int n_missing = patch_tile_uvs(n_quads);
 
 			if (n_missing > 0) {
 				qsort(r->missing_glyphdefs, n_missing, sizeof r->missing_glyphdefs[0], glyphdef_compar);
@@ -629,9 +673,6 @@ static void r_flush(int flags)
 					const int n_nodes = ATLAS_WIDTH;
 					a->nodes = realloc(a->nodes, n_nodes * sizeof(*a->nodes));
 					stbrp_init_target(&a->ctx, ATLAS_WIDTH, ATLAS_HEIGHT, a->nodes, n_nodes);
-					//const int n_pixels = ATLAS_WIDTH * ATLAS_HEIGHT;
-					//assert(n_pixels > 0);
-					//a->bitmap = realloc(a->bitmap, n_pixels * sizeof(*a->bitmap));
 				}
 
 				int success = stbrp_pack_rects(
@@ -644,15 +685,15 @@ static void r_flush(int flags)
 					}
 					qsort(a->rects_arr, arrlen(a->rects_arr), sizeof *a->rects_arr, stbrect_compar);
 					assert(patch_tile_uvs(n_quads) == 0);
-				} else {
-					assert(!"TODO atlas overflow"); // TODO
+				} else if (!is_reentry) {
 					if (has_previous_tile_pass) {
-						do_submit = 1;
-						// TODO? must first flush / submit queue, NOT including THIS pass, then try again with reentry
-						if (is_reentry) {
-							// XXX nothing we can do; already tried flushing?
-						}
+						r_flush_submit(r->cursor0, 0);
+						flags &= ~FF_VTXBUF_OVERFLOW;
 					}
+					flags |= FF__REENTRY;
+					arrsetlen(a->rects_arr, 0);
+					r_flush(flags);
+					return;
 				}
 			}
 		}
@@ -698,52 +739,7 @@ static void r_flush(int flags)
 	}
 
 	if (do_submit) {
-		assert(r->encoder != NULL);
-
-		// XXX assuming that wgpuRenderPassEncoderSetVertexBuffer()
-		// doesn't do any buffer copying, so that it's fine to write
-		// the entire vertex buffer just before submitting the queue.
-		// if this is not the case, do wgpuQueueWriteBuffer() with
-		// appropriate offset before setting the vertex buffer?
-		if (r->vtxbuf_cursor > 0) {
-			wgpuQueueWriteBuffer(r->queue, r->vtxbuf, 0, &r->vtxbuf_data, r->vtxbuf_cursor);
-			r->vtxbuf_cursor = 0;
-		}
-		assert(r->vtxbuf_cursor == 0);
-
-		struct tile_atlas* a = &rstate.tile_atlas;
-		if (a->update) {
-			const int h = a->update_y1 - a->update_y0;
-			wgpuQueueWriteTexture(
-				r->queue,
-				&(WGPUImageCopyTexture) {
-					.texture = a->texture,
-					.origin = {
-						.x = 0,
-						.y = a->update_y0,
-					},
-				},
-				a->bitmap + a->update_y0 * ATLAS_WIDTH,
-				ATLAS_WIDTH * h,
-				&(WGPUTextureDataLayout) {
-					.bytesPerRow = ATLAS_WIDTH,
-				},
-				&(WGPUExtent3D) {
-					.width = ATLAS_WIDTH,
-					.height = h,
-					.depthOrArrayLayers = 1,
-				}
-			);
-			a->update = 0;
-		}
-
-		if (is_end_frame) {
-			postproc_end_frame(r->encoder);
-		}
-
-		WGPUCommandBuffer cmdbuf = wgpuCommandEncoderFinish(r->encoder, &(WGPUCommandBufferDescriptor){});
-		wgpuQueueSubmit(r->queue, 1, &cmdbuf);
-		r->encoder = NULL;
+		r_flush_submit(r->vtxbuf_cursor, is_end_frame);
 	}
 }
 
