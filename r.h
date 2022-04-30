@@ -53,9 +53,10 @@ void r_end();
 
 void r_enter(int x, int y, int w, int h);
 void r_leave();
-
 void r_scissor();
 void r_no_scissor();
+void r_enter_scissor(int x, int y, int w, int h);
+void r_leave_scissor();
 
 void r_color_plain(union v4 color);
 void r_color_xgrad(union v4 color0, union v4 color1);

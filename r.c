@@ -973,6 +973,18 @@ void r_no_scissor()
 	r->scissor = 0;
 }
 
+void r_enter_scissor(int x, int y, int w, int h)
+{
+	r_enter(x,y,w,h);
+	r_scissor();
+}
+
+void r_leave_scissor()
+{
+	r_no_scissor();
+	r_leave();
+}
+
 static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 {
 	assert(((vtxbuf_requested&3) == 0) && "vtxbuf_requested must be 4-byte aligned");
