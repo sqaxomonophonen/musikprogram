@@ -940,8 +940,8 @@ void r_enter(int x, int y, int w, int h)
 	assert(r->region_stack_size < MAX_REGION_STACK_SIZE);
 	int x0,y0,w0,h0;
 	get_region_xywh(&x0,&y0,&w0,&h0);
-	if (x < 0) x = 0;
-	if (y < 0) y = 0;
+	if (x < 0) { w += x; x = 0; }
+	if (y < 0) { h += y; y = 0; }
 	if (x+w > w0) w = w0-x;
 	if (y+h > h0) h = h0-y;
 	struct region* rg = &r->region_stack[r->region_stack_size++];
@@ -1087,9 +1087,8 @@ static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 	assert(rstate.mode == R_MODE_TILE);
 	if ((w <= 0) || (h <= 0)) return;
 
-	const struct region put_region = (struct region) {.x=x, .y=y, .w=w, .h=h};
 	const struct region region = get_region();
-
+	const struct region put_region = (struct region) {.x=x+region.x, .y=y+region.y, .w=w, .h=h};
 	if (!region_intersect(region, put_region)) return;
 
 	struct tile_vtx* pv = r_request(4 * sizeof(*pv), 6);
