@@ -11,6 +11,7 @@ enum {
 	R_MODE_TILE = 1,
 	R_MODE_PLOT,
 	R_MODE_VECTOR,
+	R_MODE_TRI,
 };
 
 enum postproc_type {
@@ -77,6 +78,9 @@ void rt_printf(const char* fmt, ...);
 void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
 void rt_clear();
+
+// R_MODE_TRI
+void r_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2);
 
 #define R_H
 #endif

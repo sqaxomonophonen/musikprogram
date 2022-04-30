@@ -781,13 +781,24 @@ static void r_flush(int flags)
 
 		wgpuRenderPassEncoderSetVertexBuffer(pass, 0, r->vtxbuf, r->cursor0, n_bytes);
 
-		wgpuRenderPassEncoderSetIndexBuffer(
-			pass,
-			r->static_quad_idxbuf,
-			WGPUIndexFormat_Uint16,
-			0,
-			sizeof(uint16_t)*r->n_static_quad_indices);
-		wgpuRenderPassEncoderDrawIndexed(pass, r->n_static_quad_indices, 1, 0, 0, 0);
+		switch (r->mode) {
+		case R_MODE_TILE:
+		case R_MODE_VECTOR: {
+			wgpuRenderPassEncoderSetIndexBuffer(
+				pass,
+				r->static_quad_idxbuf,
+				WGPUIndexFormat_Uint16,
+				0,
+				sizeof(uint16_t)*r->n_static_quad_indices);
+			wgpuRenderPassEncoderDrawIndexed(pass, r->n_static_quad_indices, 1, 0, 0, 0);
+			} break;
+		case R_MODE_TRI: {
+			const int divisor = (3*sizeof(struct vector_vtx));
+			assert((n_bytes % divisor) == 0);
+			wgpuRenderPassEncoderDraw(pass, 3*(n_bytes/divisor), 1, 0, 0);
+			} break;
+		default: assert(!"unhandled modE");
+		}
 
 		wgpuRenderPassEncoderEnd(pass);
 		r->n_passes++;
@@ -880,6 +891,7 @@ void r_begin(int mode)
 		r->bind_group = a->bind_group;
 		}; break;
 	case R_MODE_VECTOR:
+	case R_MODE_TRI:
 		r->pipeline = r->vector_pipeline;
 		r->bind_group = r->vector_bind_group;
 		break;
@@ -1437,6 +1449,20 @@ static void linestuff_set_min_angle(float min_angle)
 {
 	struct linestuff* ls = &rstate.linestuff;
 	ls->dot_threshold = cosf(PI + ((min_angle * (1.0f/360.0f)) * PI2));
+}
+
+void r_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2)
+{
+	struct r* r = &rstate;
+	assert(r->mode == R_MODE_TRI);
+
+	struct vector_vtx* pv = r_request(3*sizeof(*pv), 0);
+	pv[0].a_pos = p0;
+	pv[0].a_color = c16pak(c0);
+	pv[1].a_pos = p1;
+	pv[1].a_color = c16pak(c1);
+	pv[2].a_pos = p2;
+	pv[2].a_color = c16pak(c2);
 }
 
 void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQueue queue)
