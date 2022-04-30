@@ -51,6 +51,15 @@ struct region {
 	int x,y,w,h;
 };
 
+static inline int region_intersect(struct region a, struct region b)
+{
+	return     ( a.x     < b.x+b.w )
+		&& ( a.x+a.w > b.x     )
+		&& ( a.y     < b.y+b.h )
+		&& ( a.y+a.h > b.y     )
+		;
+}
+
 union glyphdef {
 	uint32_t u32;
 	struct {
@@ -889,32 +898,39 @@ void r_end()
 	r->mode = 0;
 }
 
-static inline void get_region(int* x, int* y, int* w, int* h)
+static inline struct region get_region()
 {
 	struct r* r = &rstate;
+	struct region rg;
 	if (r->region_stack_size > 0) {
-		struct region* rg = &r->region_stack[r->region_stack_size-1];
-		if (x) *x = rg->x;
-		if (y) *y = rg->y;
-		if (w) *w = rg->w;
-		if (h) *h = rg->h;
+		rg = r->region_stack[r->region_stack_size-1];
 	} else {
-		if (x) *x = 0;
-		if (y) *y = 0;
-		if (w) *w = r->width;
-		if (h) *h = r->height;
+		rg.x = 0;
+		rg.y = 0;
+		rg.w = r->width;
+		rg.h = r->height;
 	}
+	return rg;
 }
 
-static inline void get_origin(int* x, int* y)
+static inline void get_region_xywh(int* x, int* y, int* w, int* h)
 {
-	get_region(x,y,NULL,NULL);
+	struct region rg = get_region();
+	if (x) *x = rg.x;
+	if (y) *y = rg.y;
+	if (w) *w = rg.w;
+	if (h) *h = rg.h;
+}
+
+static inline void get_origin_xy(int* x, int* y)
+{
+	get_region_xywh(x,y,NULL,NULL);
 }
 
 static inline union v2 get_origin_v2()
 {
 	int x,y;
-	get_origin(&x,&y);
+	get_origin_xy(&x,&y);
 	return v2(x,y);
 }
 
@@ -923,7 +939,7 @@ void r_enter(int x, int y, int w, int h)
 	struct r* r = &rstate;
 	assert(r->region_stack_size < MAX_REGION_STACK_SIZE);
 	int x0,y0,w0,h0;
-	get_region(&x0,&y0,&w0,&h0);
+	get_region_xywh(&x0,&y0,&w0,&h0);
 	if (x < 0) x = 0;
 	if (y < 0) y = 0;
 	if (x+w > w0) w = w0-x;
@@ -947,7 +963,7 @@ void r_scissor()
 	struct r* r = &rstate;
 	assert((r->mode == 0) && "scissor must be activated outside of r_begin()/r_end()");
 	r->scissor = 1;
-	get_region(&r->scissor_x, &r->scissor_y, &r->scissor_width, &r->scissor_height);
+	get_region_xywh(&r->scissor_x, &r->scissor_y, &r->scissor_width, &r->scissor_height);
 }
 
 void r_no_scissor()
@@ -1059,25 +1075,29 @@ static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 	assert(rstate.mode == R_MODE_TILE);
 	if ((w <= 0) || (h <= 0)) return;
 
+	const struct region put_region = (struct region) {.x=x, .y=y, .w=w, .h=h};
+	const struct region region = get_region();
+
+	if (!region_intersect(region, put_region)) return;
+
 	struct tile_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
 	const union v2 dst = v2(x,y);
-	const union v2 o = get_origin_v2();
-
-	// TODO clip if entirely outside region
+	const float ox = region.x;
+	const float oy = region.y;
 
 	// NOTE a_uv is set by r_flush()
 
-	pv[0].a_pos   = v2_add(dst, v2( +o.x,  +o.y));
+	pv[0].a_pos   = v2_add(dst, v2( +ox,  +oy));
 	pv[0].a_color = rstate.color0;
 
-	pv[1].a_pos   = v2_add(dst, v2(w+o.x,  +o.y));
+	pv[1].a_pos   = v2_add(dst, v2(w+ox,  +oy));
 	pv[1].a_color = rstate.color1;
 
-	pv[2].a_pos   = v2_add(dst, v2(w+o.x, h+o.y));
+	pv[2].a_pos   = v2_add(dst, v2(w+ox, h+oy));
 	pv[2].a_color = rstate.color2;
 
-	pv[3].a_pos   = v2_add(dst, v2( +o.x, h+o.y));
+	pv[3].a_pos   = v2_add(dst, v2( +ox, h+oy));
 	pv[3].a_color = rstate.color3;
 
 	const int index = ((rstate.vtxbuf_cursor - rstate.cursor0) / (4*sizeof(*pv))) - 1;
@@ -1227,7 +1247,7 @@ void rt_quad(float x, float y, float w, float h)
 void rt_clear()
 {
 	int w,h;
-	get_region(NULL,NULL,&w,&h);
+	get_region_xywh(NULL,NULL,&w,&h);
 	rt_quad(0,0,w,h);
 }
 
