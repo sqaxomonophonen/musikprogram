@@ -5,6 +5,18 @@
 
 #define Circle(r) (v2_dot(p,p)<=(r*r))
 
+float r_tile_sample(enum r_tile tile, union v2 p)
+{
+	assert(0 <= tile && tile < RT_END);
+	switch (tile) {
+	// macro magic meets macro magic
+	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) case RT_ ## N: return (EXPR);
+	TILES
+	#undef DEF_TILE
+	default: assert(!"UNREACHABLE");
+	}
+}
+
 void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride)
 {
 	assert(0 <= tile && tile < RT_END);

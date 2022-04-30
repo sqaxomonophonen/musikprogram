@@ -1077,7 +1077,9 @@ void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
 	rt_put(bank, px, t00+2, x2, y0, wpx,  hpx);
 
 	rt_put(bank, px, t00+3, x0, y1, wpx,  midh);
-	rt_put(bank, px, t00+4, x1, y1, midw, midh);
+	if (r_tile_sample(t00+4, v2(0,0)) > 0.0) {
+		rt_put(bank, px, t00+4, x1, y1, midw, midh);
+	}
 	rt_put(bank, px, t00+5, x2, y1, wpx,  midh);
 
 	rt_put(bank, px, t00+6, x0, y2, wpx,  hpx);

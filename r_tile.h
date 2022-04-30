@@ -33,7 +33,7 @@ enum r_tile_group {
 #define TILES \
 	DEF_TILE0(box,  boxes,  1.0, 1.0, Circle(1.0)) \
 	DEF_TILE0(box2, boxes2, 1.0, 1.0, Circle(1.0)) \
-	DEF_TILE3x3(boxy, boxes, 1.0, 1.0, Circle(1.0) && !Circle(0.707))
+	DEF_TILE3x3(boxy, boxes, 1.0, 1.0, (Circle(1.0) && !Circle(0.9)) || (Circle(0.7) && !Circle(0.4)))
 
 enum r_tile {
 	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) RT_ ## N,
@@ -42,6 +42,7 @@ enum r_tile {
 	RT_END
 };
 
+float r_tile_sample(enum r_tile tile, union v2 p);
 void r_tile_raster(enum r_tile tile, int w, int h, uint8_t* bitmap, int stride); // r_tile_raster.c
 
 #define R_TILE_H
