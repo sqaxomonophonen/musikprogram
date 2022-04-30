@@ -7,6 +7,7 @@
 	TG(boxes2, 10.0, "Other rounded Boxes")
 
 enum r_tile_group {
+	RTG_nil = 0,
 	#define TG(GROUP,DEFAULT_SZ,DESC) RTG_ ## GROUP,
 	TILE_GROUPS
 	#undef TG
@@ -31,9 +32,8 @@ enum r_tile_group {
 	DEF_TILE(N ## _x2y2, G, W,   H,    0,  0, EXPR)
 
 #define TILES \
-	DEF_TILE0(box,  boxes,  1.0, 1.0, Circle(1.0)) \
-	DEF_TILE0(box2, boxes2, 1.0, 1.0, Circle(1.0)) \
-	DEF_TILE3x3(boxy, boxes, 1.0, 1.0, (Circle(1.0) && !Circle(0.9)) || (Circle(0.7) && !Circle(0.4)))
+	DEF_TILE0(one,   nil,   EXT, EXT, ((void)p,1.0)) \
+	DEF_TILE3x3(box, boxes, 1.0, 1.0, (Circle(1.0) && !Circle(0.9)) || (Circle(0.7) && !Circle(0.4)))
 
 enum r_tile {
 	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) RT_ ## N,

@@ -1127,6 +1127,11 @@ void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
 	rt_put(bank, px, t00+8, x2, y2, wpx,  hpx);
 }
 
+void rt_quad(float x, float y, float w, float h)
+{
+	rt_put(R_TILES, 0, RT_one, x, y, w, h);
+}
+
 void rv_quad(float x, float y, float w, float h)
 {
 	struct r* r = &rstate;
