@@ -17,8 +17,6 @@
 #define ATLAS_WIDTH  (2048)
 #define ATLAS_HEIGHT (2048)
 
-#define FRAMEBUFFER_DEFAULT_TEXTURE_FORMAT (WGPUTextureFormat_BGRA8UnormSrgb)
-
 #define VTXBUF_SZ (1<<22) // 4MB
 
 #define STATIC_QUADS_IDXBUF_SZ ((1<<16)+(1<<15))
@@ -166,6 +164,24 @@ struct draw_uni {
 	float scalar;
 };
 
+struct pattern_uni {
+	float x0;
+	float y0;
+	float bxx;
+	float bxy;
+	float byx;
+	float byy;
+};
+
+struct pattern {
+	int is_free;
+	WGPUBindGroup    bind_group;
+	WGPUTexture      texture;
+	WGPUTextureView  texture_view;
+	int width;
+	int height;
+};
+
 struct vector_vtx {
 	union v2 a_pos;
 	union c16 a_color;
@@ -175,8 +191,6 @@ struct tile_atlas {
 	uint8_t*            bitmap;
 	WGPUTexture         texture;
 	WGPUTextureView     texture_view;
-	WGPUBindGroup       bind_group;
-	WGPURenderPipeline  pipeline;
 
 	stbrp_context ctx;
 	stbrp_rect* rects_arr;
@@ -203,6 +217,8 @@ struct linestuff {
 	float width;
 };
 
+#define MAX_BIND_GROUPS (2)
+
 struct r {
 	WGPUInstance instance;
 	WGPUAdapter adapter;
@@ -216,8 +232,15 @@ struct r {
 	WGPUBuffer vtxbuf;
 
 	WGPUBuffer          draw_unibuf;
+	WGPUBuffer          pattern_unibuf;
+	WGPUSampler         pattern_sampler;
+
+	WGPUBindGroupLayout pattern_bind_group_layout;
 
 	struct tile_atlas   tile_atlas;
+	WGPUBindGroup       tile_bind_group;
+	WGPURenderPipeline  tile_pipeline;
+	WGPURenderPipeline  tileptn_pipeline;
 
 	WGPUBindGroup       vector_bind_group;
 	WGPURenderPipeline  vector_pipeline;
@@ -236,7 +259,8 @@ struct r {
 	int n_static_quad_indices;
 	WGPUCommandEncoder encoder;
 	WGPURenderPipeline pipeline;
-	WGPUBindGroup bind_group;
+	int n_bind_groups;
+	WGPUBindGroup bind_groups[MAX_BIND_GROUPS];
 	float seed;
 
 	union c16 color0, color1, color2, color3;
@@ -265,6 +289,10 @@ struct r {
 
 	int region_stack_size;
 	struct region region_stack[MAX_REGION_STACK_SIZE];
+
+	int              is_pattern_frame;
+	WGPUBindGroup    current_pattern_bind_group;
+	struct pattern*  patterns;
 } rstate;
 
 static void font_init(struct font* font, void* data, int index)
@@ -281,7 +309,10 @@ static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
 			.code = src,
 		},
 	});
-	assert(shader);
+	if (!shader) {
+		fprintf(stderr, "%s\n", src);
+		abort();
+	}
 	return shader;
 }
 
@@ -329,7 +360,7 @@ static WGPUTextureView postproc_begin_frame(struct postproc_window* ppw, WGPUTex
 					},
 					.mipLevelCount = 1,
 					.sampleCount = 1,
-					.format = FRAMEBUFFER_DEFAULT_TEXTURE_FORMAT,
+					.format = gpudl_get_preferred_swap_chain_texture_format(),
 				}
 			);
 			assert(texture);
@@ -606,7 +637,7 @@ static int patch_tile_uvs(int n_quads)
 	return n_missing;
 }
 
-static void r_flush_submit(int n_bytes, int is_end_frame)
+static void r_flush_submit(int n_bytes, int do_postproc)
 {
 	struct r* r = &rstate;
 	assert(r->encoder != NULL);
@@ -648,7 +679,7 @@ static void r_flush_submit(int n_bytes, int is_end_frame)
 		a->update = 0;
 	}
 
-	if (is_end_frame) {
+	if (do_postproc) {
 		postproc_end_frame(r->encoder);
 	}
 
@@ -681,7 +712,7 @@ static void r_flush(int flags)
 	assert((!is_end_frame || n_bytes == 0) && "cannot end frame with elements still in vtxbuf");
 
 	const int do_pass   = (n_bytes > 0) && (is_end_mode || is_vtxbuf_overflow || is_idxbuf_overflow);
-	int do_submit = is_end_frame || is_vtxbuf_overflow;
+	const int do_submit = is_end_frame || is_vtxbuf_overflow;
 
 	if (r->encoder == NULL) {
 		r->encoder = wgpuDeviceCreateCommandEncoder(r->device, &(WGPUCommandEncoderDescriptor){});
@@ -776,13 +807,17 @@ static void r_flush(int flags)
 		assert(r->pipeline != NULL);
 		wgpuRenderPassEncoderSetPipeline(pass, r->pipeline);
 
-		assert(r->bind_group != NULL);
-		wgpuRenderPassEncoderSetBindGroup(pass, 0, r->bind_group, 0, 0);
+		for (int i = 0; i < r->n_bind_groups; i++) {
+			WGPUBindGroup g = r->bind_groups[i];
+			assert(g != NULL);
+			wgpuRenderPassEncoderSetBindGroup(pass, i, g, 0, 0);
+		}
 
 		wgpuRenderPassEncoderSetVertexBuffer(pass, 0, r->vtxbuf, r->cursor0, n_bytes);
 
 		switch (r->mode) {
 		case R_MODE_TILE:
+		case R_MODE_TILEPTN:
 		case R_MODE_VECTOR: {
 			wgpuRenderPassEncoderSetIndexBuffer(
 				pass,
@@ -797,7 +832,7 @@ static void r_flush(int flags)
 			assert((n_bytes % divisor) == 0);
 			wgpuRenderPassEncoderDraw(pass, 3*(n_bytes/divisor), 1, 0, 0);
 			} break;
-		default: assert(!"unhandled modE");
+		default: assert(!"unhandled mode");
 		}
 
 		wgpuRenderPassEncoderEnd(pass);
@@ -807,18 +842,19 @@ static void r_flush(int flags)
 	}
 
 	if (do_submit) {
-		r_flush_submit(r->vtxbuf_cursor, is_end_frame);
+		const int do_postproc = is_end_frame && !r->is_pattern_frame;
+		r_flush_submit(r->vtxbuf_cursor, do_postproc);
 	}
 }
 
-void r_begin_frames()
+void r_begin_frames(void)
 {
 	struct r* r = &rstate;
 	assert((!r->begun_frames) && "already inside r_begin_frames()");
 	r->begun_frames = 1;
 }
 
-void r_end_frames()
+void r_end_frames(void)
 {
 	struct r* r = &rstate;
 	assert((r->begun_frames) && "not inside r_begin_frames()");
@@ -843,7 +879,7 @@ void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextu
 	r->height = height;
 
 	assert((r->begun_frames) && "not inside r_begin_frames()");
-	assert((!r->begun_frame) && "already inside r_begin_frame()");
+	assert((!r->begun_frame) && "frame already begun");
 
 	assert(r->vtxbuf_cursor == 0);
 
@@ -867,13 +903,81 @@ void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextu
 	wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
 
 	r->begun_frame = 1;
+	r->is_pattern_frame = 0;
 }
 
-void r_end_frame()
+void r_end_frame(void)
 {
 	struct r* r = &rstate;
 	assert((r->begun_frame) && "not inside r_begin_frame()");
 	assert((r->mode == 0) && "mode not r_end()'d");
+	assert(!r->is_pattern_frame);
+	r_flush(FF_END_FRAME);
+	r->begun_frame = 0;
+}
+
+static struct pattern* get_pattern(int pattern)
+{
+	struct r* r = &rstate;
+	assert(0 <= pattern && pattern < arrlen(r->patterns));
+	struct pattern* p = &r->patterns[pattern];
+	assert(!p->is_free);
+	return p;
+}
+
+void r_begin_ptn_frame(int pattern)
+{
+	struct pattern* p = get_pattern(pattern);
+	struct r* r = &rstate;
+
+	assert((r->begun_frames) && "not inside r_begin_frames()");
+	assert((!r->begun_frame) && "frame already begun");
+
+	r->width = p->width;
+	r->height = p->height;
+
+	assert(r->vtxbuf_cursor == 0);
+
+	r->n_passes = 0;
+	r->n_tile_passes = 0;
+	assert(r->n_static_quad_indices == 0);
+	r->render_target_texture_view = p->texture_view;
+
+	{
+		struct draw_uni u = {
+			.width = p->width,
+			.height = p->height,
+			.seed = r->seed,
+			.scalar = MAX_INTENSITY,
+		};
+		wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
+	}
+
+	{
+		// XXX TODO ... get transform from where?
+		const float sx = 1.0f / (float)p->width;
+		const float sy = 1.0f / (float)p->height;
+		struct pattern_uni u = {
+			.x0 = 0,
+			.y0 = 0,
+			.bxx = sx,
+			.bxy = 0.0,
+			.byx = 0.0,
+			.byy = sy,
+		};
+		wgpuQueueWriteBuffer(r->queue, r->pattern_unibuf, 0, &u, sizeof u);
+	}
+
+	r->begun_frame = 1;
+	r->is_pattern_frame = 1;
+}
+
+void r_end_ptn_frame(void)
+{
+	struct r* r = &rstate;
+	assert((r->begun_frame) && "not inside r_begin_frame()");
+	assert((r->mode == 0) && "mode not r_end()'d");
+	assert(r->is_pattern_frame);
 	r_flush(FF_END_FRAME);
 	r->begun_frame = 0;
 }
@@ -885,15 +989,22 @@ void r_begin(int mode)
 	assert((r->mode == 0) && "already in a mode");
 
 	switch (mode) {
-	case R_MODE_TILE: {
-		struct tile_atlas* a = &r->tile_atlas;
-		r->pipeline = a->pipeline;
-		r->bind_group = a->bind_group;
-		}; break;
+	case R_MODE_TILE:
+		r->pipeline = r->tile_pipeline;
+		r->n_bind_groups = 1;
+		r->bind_groups[0] = r->tile_bind_group;
+		break;
+	case R_MODE_TILEPTN:
+		r->pipeline = r->tileptn_pipeline;
+		r->n_bind_groups = 2;
+		r->bind_groups[0] = r->tile_bind_group;
+		r->bind_groups[1] = r->current_pattern_bind_group;
+		break;
 	case R_MODE_VECTOR:
 	case R_MODE_TRI:
 		r->pipeline = r->vector_pipeline;
-		r->bind_group = r->vector_bind_group;
+		r->n_bind_groups = 1;
+		r->bind_groups[0] = r->vector_bind_group;
 		break;
 	default: assert(!"unhandled mode");
 	}
@@ -902,7 +1013,7 @@ void r_begin(int mode)
 	r->mode = mode;
 }
 
-void r_end()
+void r_end(void)
 {
 	r_flush(FF_END_MODE);
 	struct r* r = &rstate;
@@ -963,14 +1074,14 @@ void r_enter(int x, int y, int w, int h)
 	rg->h = h;
 }
 
-void r_leave()
+void r_leave(void)
 {
 	struct r* r = &rstate;
 	assert(r->region_stack_size > 0);
 	r->region_stack_size--;
 }
 
-void r_scissor()
+void r_scissor(void)
 {
 	struct r* r = &rstate;
 	assert((r->mode == 0) && "scissor must be activated outside of r_begin()/r_end()");
@@ -978,7 +1089,7 @@ void r_scissor()
 	get_region_xywh(&r->scissor_x, &r->scissor_y, &r->scissor_width, &r->scissor_height);
 }
 
-void r_no_scissor()
+void r_no_scissor(void)
 {
 	struct r* r = &rstate;
 	assert((r->mode == 0) && "scissor must be deactivated outside of r_begin()/r_end()");
@@ -991,7 +1102,7 @@ void r_enter_scissor(int x, int y, int w, int h)
 	r_scissor();
 }
 
-void r_leave_scissor()
+void r_leave_scissor(void)
 {
 	r_no_scissor();
 	r_leave();
@@ -1021,8 +1132,87 @@ static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 	return p;
 }
 
+int rptn_new(int width, int height)
+{
+	struct r* r = &rstate;
+	const int n_patterns = arrlen(r->patterns);
+	struct pattern* p = NULL;
+	for (int i = 0; i < n_patterns; i++) {
+		struct pattern* ptmp  = &r->patterns[i];
+		if (ptmp->is_free) {
+			p = ptmp;
+			break;
+		}
+	}
+	if (p == NULL) p = arraddnptr(r->patterns, 1);
+	assert(p != NULL);
+	memset(p, 0, sizeof *p);
 
-void r_color_plain(union v4 color)
+	p->width = width;
+	p->height = height;
+
+	p->texture = wgpuDeviceCreateTexture(
+		rstate.device,
+		&(WGPUTextureDescriptor) {
+			.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment,
+			.dimension = WGPUTextureDimension_2D,
+			.size = (WGPUExtent3D){
+				.width = ATLAS_WIDTH,
+				.height = ATLAS_HEIGHT,
+				.depthOrArrayLayers = 1,
+			},
+			.mipLevelCount = 1,
+			.sampleCount = 1,
+			.format = gpudl_get_preferred_swap_chain_texture_format(),
+		}
+	);
+	assert(p->texture);
+
+	p->texture_view = wgpuTextureCreateView(p->texture, &(WGPUTextureViewDescriptor) {});
+	assert(p->texture_view);
+
+	p->bind_group = wgpuDeviceCreateBindGroup(r->device, &(WGPUBindGroupDescriptor){
+		.layout = r->pattern_bind_group_layout,
+		.entryCount = 3,
+		.entries = (WGPUBindGroupEntry[]){
+			(WGPUBindGroupEntry){
+				.binding = 0,
+				.buffer = r->pattern_unibuf,
+				.offset = 0,
+				.size = sizeof(struct pattern_uni),
+			},
+			(WGPUBindGroupEntry){
+				.binding = 1,
+				.textureView = p->texture_view,
+			},
+			(WGPUBindGroupEntry){
+				.binding = 2,
+				.sampler = r->pattern_sampler,
+			},
+		},
+	});
+	assert(p->bind_group);
+
+	return p - r->patterns;
+}
+
+void rptn_free(int pattern)
+{
+	struct pattern* p = get_pattern(pattern);
+	p->is_free = 1;
+	wgpuBindGroupDrop(p->bind_group);
+	wgpuTextureViewDrop(p->texture_view);
+	wgpuTextureDrop(p->texture);
+}
+
+void rptn_set(int pattern)
+{
+	struct r* r = &rstate;
+	assert(r->mode == 0);
+	r->current_pattern_bind_group = get_pattern(pattern)->bind_group;
+}
+
+void rcol_plain(union v4 color)
 {
 	struct r* r = &rstate;
 	r->color0 = c16pak(color);
@@ -1031,7 +1221,7 @@ void r_color_plain(union v4 color)
 	r->color3 = r->color0;
 }
 
-void r_color_xgrad(union v4 color0, union v4 color1)
+void rcol_xgrad(union v4 color0, union v4 color1)
 {
 	struct r* r = &rstate;
 	r->color0 = c16pak(color0);
@@ -1040,7 +1230,7 @@ void r_color_xgrad(union v4 color0, union v4 color1)
 	r->color3 = r->color0;
 }
 
-void r_color_ygrad(union v4 color0, union v4 color1)
+void rcol_ygrad(union v4 color0, union v4 color1)
 {
 	struct r* r = &rstate;
 	r->color0 = c16pak(color0);
@@ -1096,7 +1286,7 @@ static int utf8_decode(const char** c0z, int* n)
 
 static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 {
-	assert(rstate.mode == R_MODE_TILE);
+	assert(rstate.mode == R_MODE_TILE || rstate.mode == R_MODE_TILEPTN);
 	if ((w <= 0) || (h <= 0)) return;
 
 	const struct region region = get_region();
@@ -1267,7 +1457,7 @@ void rt_quad(float x, float y, float w, float h)
 	rt_put(R_TILES, 0, RT_one, x, y, w, h);
 }
 
-void rt_clear()
+void rt_clear(void)
 {
 	int w,h;
 	get_region_xywh(NULL,NULL,&w,&h);
@@ -1440,7 +1630,7 @@ void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
 	}
 }
 
-void rv_end_path()
+void rv_end_path(void)
 {
 	lineflush(NULL);
 }
@@ -1580,10 +1770,65 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
 			.size = sizeof(struct draw_uni),
 		});
 		assert(rstate.draw_unibuf);
-
 	}
 
-	// R_MODE_TILE
+	// pattern stuff
+	{
+		rstate.pattern_unibuf = wgpuDeviceCreateBuffer(device, &(WGPUBufferDescriptor){
+			.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+			.size = sizeof(struct pattern_uni),
+		});
+		assert(rstate.pattern_unibuf);
+
+		rstate.pattern_bind_group_layout = wgpuDeviceCreateBindGroupLayout(
+			device,
+			&(WGPUBindGroupLayoutDescriptor){
+				.entryCount = 3,
+				.entries = (WGPUBindGroupLayoutEntry[]){
+					(WGPUBindGroupLayoutEntry){
+						.binding = 0,
+						.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
+						.buffer = (WGPUBufferBindingLayout){
+							.type = WGPUBufferBindingType_Uniform,
+							.hasDynamicOffset = false,
+							.minBindingSize = sizeof(struct pattern_uni),
+						},
+					},
+					(WGPUBindGroupLayoutEntry){
+						.binding = 1,
+						.visibility = WGPUShaderStage_Fragment,
+						.texture = (WGPUTextureBindingLayout){
+							.sampleType = WGPUTextureSampleType_Float,
+							.viewDimension = WGPUTextureViewDimension_2D,
+							.multisampled = false,
+						},
+					},
+					(WGPUBindGroupLayoutEntry){
+						.binding = 2,
+						.visibility = WGPUShaderStage_Fragment,
+						.sampler = (WGPUSamplerBindingLayout){
+							.type = WGPUSamplerBindingType_Filtering,
+						},
+					},
+				},
+			}
+		);
+		assert(rstate.pattern_bind_group_layout);
+
+		rstate.pattern_sampler = wgpuDeviceCreateSampler(rstate.device, &(WGPUSamplerDescriptor) {
+			.addressModeU = WGPUAddressMode_Repeat,
+			.addressModeV = WGPUAddressMode_Repeat,
+			.addressModeW = WGPUAddressMode_Repeat,
+			.magFilter = WGPUFilterMode_Linear,
+			.minFilter = WGPUFilterMode_Linear,
+			.mipmapFilter = WGPUMipmapFilterMode_Nearest,
+			.lodMinClamp = 0.0f,
+			.lodMaxClamp = 0.0f,
+		});
+		assert(rstate.pattern_sampler);
+	}
+
+	// atlas stuff
 	{
 		struct tile_atlas* a = &rstate.tile_atlas;
 
@@ -1609,9 +1854,11 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
 		a->texture_view = wgpuTextureCreateView(a->texture, &(WGPUTextureViewDescriptor) {});
 		assert(a->texture_view);
 
-		const size_t unisz = sizeof(struct draw_uni);
+	}
 
-		WGPUShaderModule shader = mk_shader_module(device, shadersrc_tile);
+	// R_MODE_TILE / R_MODE_TILEPTN
+	{
+		const size_t unisz = sizeof(struct draw_uni);
 
 		WGPUBindGroupLayout bind_group_layout = wgpuDeviceCreateBindGroupLayout(
 			device,
@@ -1641,7 +1888,7 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
 		);
 		assert(bind_group_layout);
 
-		a->bind_group = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
+		rstate.tile_bind_group = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
 			.layout = bind_group_layout,
 			.entryCount = 2,
 			.entries = (WGPUBindGroupEntry[]){
@@ -1653,79 +1900,154 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
 				},
 				(WGPUBindGroupEntry){
 					.binding = 1,
-					.textureView = a->texture_view,
+					.textureView = rstate.tile_atlas.texture_view,
 				},
 			},
 		});
-		assert(a->bind_group);
+		assert(rstate.tile_bind_group);
 
-		WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(
-			device,
-			&(WGPUPipelineLayoutDescriptor){
-				.bindGroupLayoutCount = 1,
-				.bindGroupLayouts = (WGPUBindGroupLayout[]){
-					bind_group_layout,
-				},
-			}
-		);
-		assert(pipeline_layout);
+		{
+			WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(
+				device,
+				&(WGPUPipelineLayoutDescriptor){
+					.bindGroupLayoutCount = 1,
+					.bindGroupLayouts = (WGPUBindGroupLayout[]){
+						bind_group_layout,
+					},
+				}
+			);
+			assert(pipeline_layout);
 
-		a->pipeline = wgpuDeviceCreateRenderPipeline(
-			device,
-			&(WGPURenderPipelineDescriptor){
-				.layout = pipeline_layout,
-				.vertex = (WGPUVertexState){
-					.module = shader,
-					.entryPoint = "vs_main",
-					.bufferCount = 1,
-					.buffers = (WGPUVertexBufferLayout[]){
-						(WGPUVertexBufferLayout){
-							.arrayStride = sizeof(struct tile_vtx),
-							.stepMode = WGPUVertexStepMode_Vertex,
-							.attributeCount = 3,
-							.attributes = (WGPUVertexAttribute[]) {
-								(WGPUVertexAttribute){
-									.format = WGPUVertexFormat_Float32x2,
-									.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_pos),
-									.shaderLocation = 0,
-								},
-								(WGPUVertexAttribute){
-									.format = WGPUVertexFormat_Float32x2,
-									.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_uv),
-									.shaderLocation = 1,
-								},
-								(WGPUVertexAttribute){
-									.format = WGPUVertexFormat_Unorm16x4,
-									.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_color),
-									.shaderLocation = 2,
+			WGPUShaderModule shader = mk_shader_module(device, shadersrc_tile);
+			rstate.tile_pipeline = wgpuDeviceCreateRenderPipeline(
+				device,
+				&(WGPURenderPipelineDescriptor){
+					.layout = pipeline_layout,
+					.vertex = (WGPUVertexState){
+						.module = shader,
+						.entryPoint = "vs_main",
+						.bufferCount = 1,
+						.buffers = (WGPUVertexBufferLayout[]){
+							(WGPUVertexBufferLayout){
+								.arrayStride = sizeof(struct tile_vtx),
+								.stepMode = WGPUVertexStepMode_Vertex,
+								.attributeCount = 3,
+								.attributes = (WGPUVertexAttribute[]) {
+									(WGPUVertexAttribute){
+										.format = WGPUVertexFormat_Float32x2,
+										.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_pos),
+										.shaderLocation = 0,
+									},
+									(WGPUVertexAttribute){
+										.format = WGPUVertexFormat_Float32x2,
+										.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_uv),
+										.shaderLocation = 1,
+									},
+									(WGPUVertexAttribute){
+										.format = WGPUVertexFormat_Unorm16x4,
+										.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_color),
+										.shaderLocation = 2,
+									},
 								},
 							},
 						},
 					},
-				},
-				.primitive = (WGPUPrimitiveState){
-					.topology = WGPUPrimitiveTopology_TriangleList,
-					.frontFace = WGPUFrontFace_CCW,
-					.cullMode = WGPUCullMode_None
-				},
-				.multisample = (WGPUMultisampleState){
-					.count = 1,
-					.mask = ~0,
-					.alphaToCoverageEnabled = false,
-				},
-				.fragment = &(WGPUFragmentState){
-					.module = shader,
-					.entryPoint = "fs_main",
-					.targetCount = 1,
-					.targets = &(WGPUColorTargetState){
-						.format = gpudl_get_preferred_swap_chain_texture_format(),
-						.blend = premultiplied_alpha_blend_state,
-						.writeMask = WGPUColorWriteMask_All
+					.primitive = (WGPUPrimitiveState){
+						.topology = WGPUPrimitiveTopology_TriangleList,
+						.frontFace = WGPUFrontFace_CCW,
+						.cullMode = WGPUCullMode_None
 					},
-				},
-			}
-		);
+					.multisample = (WGPUMultisampleState){
+						.count = 1,
+						.mask = ~0,
+						.alphaToCoverageEnabled = false,
+					},
+					.fragment = &(WGPUFragmentState){
+						.module = shader,
+						.entryPoint = "fs_main",
+						.targetCount = 1,
+						.targets = &(WGPUColorTargetState){
+							.format = gpudl_get_preferred_swap_chain_texture_format(),
+							.blend = premultiplied_alpha_blend_state,
+							.writeMask = WGPUColorWriteMask_All
+						},
+					},
+				}
+			);
+			assert(rstate.tile_pipeline);
+		}
 
+		{
+			WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(
+				device,
+				&(WGPUPipelineLayoutDescriptor){
+					.bindGroupLayoutCount = 2,
+					.bindGroupLayouts = (WGPUBindGroupLayout[]){
+						bind_group_layout,
+						rstate.pattern_bind_group_layout,
+					},
+				}
+			);
+			assert(pipeline_layout);
+
+			WGPUShaderModule shader = mk_shader_module(device, shadersrc_tileptn);
+			rstate.tileptn_pipeline = wgpuDeviceCreateRenderPipeline(
+				device,
+				&(WGPURenderPipelineDescriptor){
+					.layout = pipeline_layout,
+					.vertex = (WGPUVertexState){
+						.module = shader,
+						.entryPoint = "vs_main",
+						.bufferCount = 1,
+						.buffers = (WGPUVertexBufferLayout[]){
+							(WGPUVertexBufferLayout){
+								.arrayStride = sizeof(struct tile_vtx),
+								.stepMode = WGPUVertexStepMode_Vertex,
+								.attributeCount = 3,
+								.attributes = (WGPUVertexAttribute[]) {
+									(WGPUVertexAttribute){
+										.format = WGPUVertexFormat_Float32x2,
+										.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_pos),
+										.shaderLocation = 0,
+									},
+									(WGPUVertexAttribute){
+										.format = WGPUVertexFormat_Float32x2,
+										.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_uv),
+										.shaderLocation = 1,
+									},
+									(WGPUVertexAttribute){
+										.format = WGPUVertexFormat_Unorm16x4,
+										.offset = (uint64_t)MEMBER_OFFSET(struct tile_vtx, a_color),
+										.shaderLocation = 2,
+									},
+								},
+							},
+						},
+					},
+					.primitive = (WGPUPrimitiveState){
+						.topology = WGPUPrimitiveTopology_TriangleList,
+						.frontFace = WGPUFrontFace_CCW,
+						.cullMode = WGPUCullMode_None
+					},
+					.multisample = (WGPUMultisampleState){
+						.count = 1,
+						.mask = ~0,
+						.alphaToCoverageEnabled = false,
+					},
+					.fragment = &(WGPUFragmentState){
+						.module = shader,
+						.entryPoint = "fs_main",
+						.targetCount = 1,
+						.targets = &(WGPUColorTargetState){
+							.format = gpudl_get_preferred_swap_chain_texture_format(),
+							.blend = premultiplied_alpha_blend_state,
+							.writeMask = WGPUColorWriteMask_All
+						},
+					},
+				}
+			);
+			assert(rstate.tileptn_pipeline);
+		}
 	}
 
 	// R_MODE_VECTOR
@@ -1925,7 +2247,7 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
 					.entryPoint = "fs_main",
 					.targetCount = 1,
 					.targets = &(WGPUColorTargetState){
-						.format = FRAMEBUFFER_DEFAULT_TEXTURE_FORMAT,
+						.format = gpudl_get_preferred_swap_chain_texture_format(),
 						.blend = &(WGPUBlendState){
 							.color = (WGPUBlendComponent){
 								.srcFactor = WGPUBlendFactor_One,

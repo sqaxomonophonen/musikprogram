@@ -1,7 +1,8 @@
 #define WGSLS \
-	WGSL("tile.wgsl",    "shadersrc_tile"     ) \
-	WGSL("vector.wgsl",  "shadersrc_vector"   ) \
-	WGSL("ppgauss.wgsl", "shadersrc_ppgauss"  )
+	WGSL("tile.wgsl",       "shadersrc_tile"     ) \
+	WGSL("tileptn.wgsl",    "shadersrc_tileptn"  ) \
+	WGSL("vector.wgsl",     "shadersrc_vector"   ) \
+	WGSL("ppgauss.wgsl",    "shadersrc_ppgauss"  )
 
 #define FONTS \
 	FONT("Cousine-Regular.ttf", "fontdata_mono") \

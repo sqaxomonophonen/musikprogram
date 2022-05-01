@@ -395,7 +395,7 @@ static void gpudl__wgpu_post_init(struct gpudl__window* win)
 			.requiredLimits = &(WGPURequiredLimits){
 				.nextInChain = NULL,
 				.limits = (WGPULimits){
-					.maxBindGroups = 1,
+					.maxBindGroups = 4,
 				},
 			},
 		},

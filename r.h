@@ -9,6 +9,7 @@
 
 enum {
 	R_MODE_TILE = 1,
+	R_MODE_TILEPTN,
 	R_MODE_PLOT,
 	R_MODE_VECTOR,
 	R_MODE_TRI,
@@ -45,23 +46,30 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
 enum postproc_type r_get_postproc_type();
 void r_set_postproc_type(enum postproc_type type);
 
-void r_begin_frames();
-void r_end_frames();
+void r_begin_frames(void);
+void r_end_frames(void);
 void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextureView swap_chain_texture_view);
-void r_end_frame();
+void r_end_frame(void);
+void r_begin_ptn_frame(int pattern);
+void r_end_ptn_frame(void);
 void r_begin(int mode);
-void r_end();
+void r_end(void);
+
+int rptn_new(int width, int height);
+void rptn_free(int pattern);
+void rptn_set(int pattern);
+
+void rcol_plain(union v4 color);
+void rcol_xgrad(union v4 color0, union v4 color1);
+void rcol_ygrad(union v4 color0, union v4 color1);
 
 void r_enter(int x, int y, int w, int h);
-void r_leave();
-void r_scissor();
-void r_no_scissor();
+void r_leave(void);
+void r_scissor(void);
+void r_no_scissor(void);
 void r_enter_scissor(int x, int y, int w, int h);
-void r_leave_scissor();
+void r_leave_scissor(void);
 
-void r_color_plain(union v4 color);
-void r_color_xgrad(union v4 color0, union v4 color1);
-void r_color_ygrad(union v4 color0, union v4 color1);
 
 // R_MODE_VECTOR
 void rv_quad(float x, float y, float w, float h);
@@ -69,7 +77,7 @@ void rv_line_width(float w);
 void rv_move_to(float x, float y);
 void rv_line_to(float x, float y);
 void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y);
-void rv_end_path();
+void rv_end_path(void);
 
 // R_MODE_TILE
 void rt_font(enum r_font font, int px);
@@ -77,7 +85,7 @@ void rt_goto(int cx, int cy);
 void rt_printf(const char* fmt, ...);
 void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
-void rt_clear();
+void rt_clear(void);
 
 // R_MODE_TRI
 void r_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2);
