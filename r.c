@@ -1157,8 +1157,8 @@ int rptn_new(int width, int height)
 			.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment,
 			.dimension = WGPUTextureDimension_2D,
 			.size = (WGPUExtent3D){
-				.width = ATLAS_WIDTH,
-				.height = ATLAS_HEIGHT,
+				.width = width,
+				.height = height,
 				.depthOrArrayLayers = 1,
 			},
 			.mipLevelCount = 1,
