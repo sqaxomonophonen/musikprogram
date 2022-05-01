@@ -948,7 +948,7 @@ void r_begin_ptn_frame(int pattern)
 			.width = p->width,
 			.height = p->height,
 			.seed = r->seed,
-			.scalar = MAX_INTENSITY,
+			.scalar = 1.0,
 		};
 		wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
 	}
@@ -961,8 +961,8 @@ void r_begin_ptn_frame(int pattern)
 			.x0 = 0,
 			.y0 = 0,
 			.bxx = sx,
-			.bxy = 0.0,
-			.byx = 0.0,
+			.bxy = 0,
+			.byx = 0,
 			.byy = sy,
 		};
 		wgpuQueueWriteBuffer(r->queue, r->pattern_unibuf, 0, &u, sizeof u);

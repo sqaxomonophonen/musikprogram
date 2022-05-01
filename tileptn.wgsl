@@ -49,6 +49,6 @@ fn vs_main(
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 	return fragmap(
 		in.rgba
-		* textureSample(pattern, pattern_smpl, in.pattern_uv)
+		* textureSample(pattern, pattern_smpl, in.pattern_uv) * 16.0
 		* textureLoad(atlas, vec2<i32>(i32(in.atlas_uv.x), i32(in.atlas_uv.y)), 0).r);
 }
