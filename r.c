@@ -1631,33 +1631,35 @@ void rv_fill(void)
 
 	while (n > 3) {
 		int ev = 0;
-		for (int i0 = 0; i0 < n; i0++) {
-			const int p0i = (i0+n-1)%n;
-			const int p1i = i0;
-			const int p2i = (i0+1)%n;
-			const union v2 p0 = path->vsi[p0i];
-			const union v2 p1 = path->vsi[p1i];
-			const union v2 p2 = path->vsi[p2i];
+
+		union v2 p0 = path->vsi[0];
+		union v2 p1 = path->vsi[1];
+
+		for (int i0 = 2; i0 < n; i0++) {
+			union v2 p2 = path->vsi[i0];
 
 			const float c = v2_cross(v2_sub(p1,p0), v2_sub(p2,p1));
-			if (c <= 0) continue;
+			if (c > 0) {
+				struct tritest tt;
+				tritest_init(&tt, p0, p1, p2);
 
-			struct tritest tt;
-			tritest_init(&tt, p0, p1, p2);
+				int principal = 1;
+				for (int i1 = 0; i1 < n; i1++) {
+					if (i1 >= i0-2 && i1 <= i0) continue;
+					if (tritest_inside(&tt, path->vsi[i1])) {
+						principal = 0;
+						break;
+					}
+				}
 
-			int principal = 1;
-			for (int i1 = 0; i1 < n; i1++) {
-				if (i1==p0i || i1==p1i || i1==p2i) continue;
-				if (tritest_inside(&tt, path->vsi[i1])) {
-					principal = 0;
+				if (principal) {
+					ev = i0-1; // p1
 					break;
 				}
 			}
 
-			if (principal) {
-				ev = i0;
-				break;
-			}
+			p0=p1;
+			p1=p2;
 		}
 
 		{
