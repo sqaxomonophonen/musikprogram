@@ -15,6 +15,8 @@
 
 #define MAX_WINDOWS (16)
 
+int ptn0;
+
 struct window {
 	int id;
 	int width;
@@ -46,12 +48,120 @@ static void wgpu_native_log_callback(WGPULogLevel level, const char* msg)
 	printf("WGPU NATIVE [%s] :: %s\n", lvl, msg);
 }
 
+static void tracker_present()
+{
+	r_begin(R_MODE_TILE);
+	rcol_ygrad(
+		v4(0.0, 0.0, 0.2, 1.0),
+		v4(0.0, 0.0, 0.05, 1.0)
+	);
+	rt_clear();
+	r_end();
+
+	r_begin(R_MODE_VECTOR);
+	const float x = 0.3f;
+	rv_tri(
+		v2(10, 100), v4(x,x,0,0),
+		v2(400, 300), v4(x,0,x,0),
+		v2(50, 200), v4(0,x,x,0)
+	);
+	rv_tri(
+		v2(100, 100), v4(0,0,x,0),
+		v2(400, 300), v4(0,x,0,0),
+		v2(50, 200), v4(x,0,0,0)
+	);
+	r_end();
+}
+
+static void graph_present()
+{
+	rptn_set(ptn0);
+	r_begin(R_MODE_TILEPTN);
+	rcol_plain(v4(1.0, 1.0, 1.0, 1.0));
+	rt_clear();
+	r_end();
+
+	r_begin(R_MODE_VECTOR);
+	rcol_plain(v4(1.0, 1.0, 1.0, 1.0));
+	#if 1
+
+	//rv_quad(400,200,200,200);
+
+	rv_move_to(400, 200);
+	rv_line_to(600, 200);
+	rv_line_to(600, 400);
+	rv_line_to(400, 400);
+	#else
+	rv_move_to(400, 200);
+	rv_line_to(400, 400);
+	rv_line_to(600, 400);
+	rv_line_to(600, 200);
+	#endif
+	rv_fill();
+	r_end();
+}
+
+static void window_present(struct window* window)
+{
+	const int w = window->width;
+	const int x1 = w/4;
+	const int h = window->height;
+
+	r_enter_scissor(0, 0, x1, h);
+	tracker_present();
+	r_leave_scissor();
+
+	r_enter_scissor(x1, 0, w-x1, h);
+	graph_present();
+	r_leave_scissor();
+
+	r_begin(R_MODE_TILE);
+	rcol_plain(v4(0.0, 0.0, 0.0, 1.0));
+	rt_quad(x1-2, 0, 4, h);
+	r_end();
+
+	#if 0
+	r_begin(R_MODE_TILE);
+
+	rcol_plain(v4(1.0, 1.2, 1.0, 1.0));
+	r_enter(50, 50, 200, 100);
+	rt_clear();
+	r_leave();
+
+	rcol_plain(v4(0.0, 1.2, 0.0, 1.0));
+	r_enter(0, 0, 190, 290);
+	rt_3x3(T3x3(box), 100, 100, 100, 200);
+	r_leave();
+
+	rcol_xgrad(
+		v4(0.0, 0.2, 0.0, 1.0),
+		v4(0.7, 1.2, 0.0, 1.0)
+	);
+	rt_quad(500, 100, 30, 500);
+
+	r_end();
+
+	rcol_plain(v4(1.0, 1.2, 1.7, 1.0));
+	r_begin(R_MODE_VECTOR);
+	rv_line_width(1.8);
+	rv_move_to(0,0);
+	rv_bezier_to(
+		window->width, 0,
+		0, window->height,
+		window->width, window->height);
+	//rv_line_to(window->width, window->height);
+	rv_end_path();
+	r_end();
+	#endif
+}
+
 int main(int argc, char** argv)
 {
 	stm_setup();
 	gpudl_init();
 
 	wgpuSetLogCallback(wgpu_native_log_callback);
+	//wgpuSetLogLevel(WGPULogLevel_Trace);
 	//wgpuSetLogLevel(WGPULogLevel_Debug);
 	//wgpuSetLogLevel(WGPULogLevel_Info);
 	wgpuSetLogLevel(WGPULogLevel_Warn);
@@ -67,20 +177,13 @@ int main(int argc, char** argv)
 		r_init(instance, adapter, device, queue);
 	}
 
-	#if 0
-	WGPUAdapter adapter;
-	WGPUDevice device;
-	WGPUQueue queue;
-	gpudl_get_wgpu(NULL, &adapter, &device, &queue);
-	mprg.r.device = device;
-	mprg.r.queue = queue;
-	#endif
-
 	struct PWR pwr = {0};
 	struct fps* fps = fps_new(60);
 
+	const int ptn0_sz = 128;
+	ptn0 = rptn_new(ptn0_sz, ptn0_sz);
+
 	int iteration = 0;
-	int imax = MAX_INTENSITY;
 	while (mprg.n_windows > 0) {
 		int on_battery = PWR_on_battery(&pwr);
 
@@ -115,10 +218,6 @@ int main(int argc, char** argv)
 							r_set_postproc_type(PP_GAUSS);
 						}
 					}
-					if (e.key.code == GK_UP) imax++;
-					if (e.key.code == GK_DOWN) imax--;
-					if (imax < 0) imax = 0;
-					if (imax > MAX_INTENSITY) imax = MAX_INTENSITY;
 
 				}
 				break;
@@ -139,6 +238,53 @@ int main(int argc, char** argv)
 
 		// render all windows
 		r_begin_frames();
+
+		if ((iteration & 0) == 0) {
+			r_begin_ptn_frame(ptn0);
+			r_begin(R_MODE_TILE);
+			rcol_plain(v4(0.0, 0.0, 0.0, 1.0));
+			rt_clear();
+			const float m = 1;
+			rcol_plain(v4(0.05, 0.05, 0.05, 1.0));
+			rt_quad(m, m, ptn0_sz-m*2, ptn0_sz-m*2);
+			rcol_plain(v4(0.0, 0.0, 0.0, 0.6));
+			rt_quad(0, m*3, ptn0_sz, m*2);
+			rt_quad(0, ptn0_sz-m*5, ptn0_sz, m*2);
+			rt_quad(m*3, 0, m*2, ptn0_sz);
+			rt_quad(ptn0_sz-m*5, 0, m*2, ptn0_sz);
+			rcol_plain(v4(0.0, 0.0, 0.0, 0.3));
+			rt_quad(0, m*7, ptn0_sz, m*2);
+			rt_quad(0, ptn0_sz-m*9, ptn0_sz, m*2);
+			rt_quad(m*7, 0, m*2, ptn0_sz);
+			rt_quad(ptn0_sz-m*9, 0, m*2, ptn0_sz);
+			/*
+			const int hsz = ptn0_sz/2;
+			for (int y = 0; y < 2; y++) {
+				const float y0 = y*hsz;
+				for (int x = 0; x < 2; x++) {
+					const float x0 = x*hsz;
+					int o = (x+y)&1;
+					const float m = 3.0f;
+					const float s = 
+					for (int i = 0; i < 3; i++) {
+						if (o) {
+							//rt_quad(x0+m, y0,
+							//rt_quad(x0+m, y0,
+							rt_quad(x0+m, y0,
+						} else {
+							//rt_quad(
+						}
+					}
+				}
+			}
+			*/
+			//rt_quad(0, 0, iteration % 128, (iteration*2) % 128);
+			//rcol_plain(v4(1.0, 0.0, 1.0, 1.0));
+			//rt_quad(0, 0, iteration % 128, (iteration*2) % 128);
+			r_end();
+			r_end_ptn_frame();
+		}
+
 		for (int i = 0; i < mprg.n_windows; i++) {
 			struct window* window = &mprg.windows[i];
 			WGPUTextureView v = gpudl_render_begin(window->id);
@@ -147,66 +293,7 @@ int main(int argc, char** argv)
 			gpudl_window_get_size(window->id, &window->width, &window->height);
 			r_begin_frame(window->width, window->height, &window->ppw, v);
 
-			r_begin(R_MODE_VECTOR);
-
-			#if 0
-			const float m1 = imax;;
-			{
-				int x0 = 200;
-				int inc = 200;
-				const float m0 = 1;
-				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m0,m0,1), v4(0,0,0,0));
-				x0 += inc;
-				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m0,m1,m0,1), v4(0,0,0,0));
-				x0 += inc;
-				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m0,m0,m1,1), v4(0,0,0,0));
-				x0 += inc;
-				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m0,m1,m1,1), v4(0,0,0,0));
-				x0 += inc;
-				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m0,m1,1), v4(0,0,0,0));
-				x0 += inc;
-				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m1,m0,1), v4(0,0,0,0));
-				x0 += inc;
-				rv_quad_ygrad(x0, 0, inc/2, window->height, v4(m1,m1,m1,1), v4(0,0,0,0));
-				x0 += inc;
-			}
-
-			{
-				int y = 0;
-				int inc = 10;
-				while (y < window->height) {
-					rv_quad(0, y, window->width, inc/5, v4(0,0,0,0));
-					y += inc;
-					inc += 10;
-				}
-			}
-
-			rv_quad_ygrad(80, 0, 5, window->height, v4(m1,m1,m1,1), v4(0,0,0,0));
-			#endif
-
-			{
-				const float S = 50;
-				r_color_ygrad(v4(0.0,0.02,0,0), v4(0.0,0.06,0,0));
-				rv_quad(window->width/2-S, 0, S*2, window->height);
-				r_color_plain(v4(0,0,0.7,0.0));
-				rv_quad(0, window->height/2-S, window->width, S*2);
-
-			}
-
-			r_end();
-
-			r_begin(R_MODE_TILE);
-
-			r_color_plain(v4(0.0, 0.8, 0.0, 1.0));
-			rt_font(R_FONT_VARIABLE, 50);
-			rt_goto(5, window->height-50);
-			rt_printf("hello       / fps=%.2f", fps->fps);
-
-			rt_3x3(T3x3(boxy), 100, 100, 100, 200);
-
-
-
-			r_end();
+			window_present(window);
 
 			r_end_frame();
 
