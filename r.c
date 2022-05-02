@@ -1571,6 +1571,7 @@ void rv_stroke(float width)
 	assert(!"TODO");
 }
 
+#if 0
 static int line_segment_intersect(union v2 a0, union v2 a1, union v2 b0, union v2 b1)
 {
 	const union v2 s1 = v2_sub(a1,a0);
@@ -1585,12 +1586,36 @@ static int line_segment_intersect(union v2 a0, union v2 a1, union v2 b0, union v
 	const float t = ( s2.x * (a0.y - b0.y) - s2.y * (a0.x - b0.x)) * dinv;
 	return (t >= 0 && t <= 1);
 }
+#endif
+
+static int point_in_triangle(union v2 p, union v2 a, union v2 b, union v2 c)
+{
+	const union v2 v0 = v2_sub(c,a);
+	const union v2 v1 = v2_sub(b,a);
+	const union v2 v2 = v2_sub(p,a);
+
+	const float dot00 = v2_dot(v0,v0);
+	const float dot01 = v2_dot(v0,v1);
+	const float dot02 = v2_dot(v0,v2);
+	const float dot11 = v2_dot(v1,v1);
+	const float dot12 = v2_dot(v1,v2);
+
+	const float denom = (dot00 * dot11 - dot01 * dot01);
+	if (fabsf(denom) < 1e-10) return 1;
+
+	const float denom_inv = 1.0f / denom;
+	const float u = (dot11 * dot02 - dot01 * dot12) * denom_inv;
+	const float v = (dot00 * dot12 - dot01 * dot02) * denom_inv;
+
+	return (u >= 0.0f) && (v >= 0.0f) && (u+v < 1.0f);
+}
 
 void rv_fill(void)
 {
 	struct path* path = &rstate.path;
 
 	int n = path->n;
+	if (n < 3) return;
 	for (int i = 0; i < n; i++) {
 		path->vsi[i] = path->vs[i]; // TODO populate vsi as "inner vertices"
 	}
@@ -1598,26 +1623,26 @@ void rv_fill(void)
 	while (n > 3) {
 		int ev = 0;
 		for (int i0 = 0; i0 < n; i0++) {
-			const union v2 p0 = path->vsi[(i0+n-1)%n];
-			const union v2 p1 = path->vsi[i0];
-			const union v2 p2 = path->vsi[(i0+1)%n];
+			const int p0i = (i0+n-1)%n;
+			const int p1i = i0;
+			const int p2i = (i0+1)%n;
+			const union v2 p0 = path->vsi[p0i];
+			const union v2 p1 = path->vsi[p1i];
+			const union v2 p2 = path->vsi[p2i];
+
 			const float c = v2_cross(v2_sub(p1,p0), v2_sub(p2,p1));
 			if (c <= 0) continue;
 
-			union v2 qp = path->vsi[n-1];
-			int diagonal_intersects_outline = 0;
+			int principal = 1;
 			for (int i1 = 0; i1 < n; i1++) {
-				const union v2 q = path->vsi[i1];
-				if ((i1!=i0) && (i1!=i0+1)) {
-					if (line_segment_intersect(p0, p1, qp, q)) {
-						diagonal_intersects_outline = 1;
-						break;
-					}
+				if (i1==p0i || i1==p1i || i1==p2i) continue;
+				if (point_in_triangle(path->vsi[i1], p0, p1, p2)) {
+					principal = 0;
+					break;
 				}
-				qp = q;
 			}
 
-			if (!diagonal_intersects_outline) {
+			if (principal) {
 				ev = i0;
 				break;
 			}
