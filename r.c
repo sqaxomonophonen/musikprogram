@@ -1586,27 +1586,36 @@ static int line_segment_intersect(union v2 a0, union v2 a1, union v2 b0, union v
 	const float t = ( s2.x * (a0.y - b0.y) - s2.y * (a0.x - b0.x)) * dinv;
 	return (t >= 0 && t <= 1);
 }
+
 #endif
 
-static int point_in_triangle(union v2 p, union v2 a, union v2 b, union v2 c)
+struct tritest {
+	union v2 a,v0,v1;
+	float dot00, dot01, dot11;
+	float denom_inv;
+};
+
+static void tritest_init(struct tritest* tt, union v2 a, union v2 b, union v2 c)
 {
-	const union v2 v0 = v2_sub(c,a);
-	const union v2 v1 = v2_sub(b,a);
-	const union v2 v2 = v2_sub(p,a);
+	tt->v0 = v2_sub(c,a);
+	tt->v1 = v2_sub(b,a);
+	tt->dot00 = v2_dot(tt->v0,tt->v0);
+	tt->dot01 = v2_dot(tt->v0,tt->v1);
+	tt->dot11 = v2_dot(tt->v1,tt->v1);
+	const float denom = (tt->dot00 * tt->dot11 - tt->dot01 * tt->dot01);
+	tt->denom_inv = 0.0f;
+	if (fabsf(denom) < 1e-10) return;
+	tt->denom_inv = 1.0f / denom;
+}
 
-	const float dot00 = v2_dot(v0,v0);
-	const float dot01 = v2_dot(v0,v1);
-	const float dot02 = v2_dot(v0,v2);
-	const float dot11 = v2_dot(v1,v1);
-	const float dot12 = v2_dot(v1,v2);
-
-	const float denom = (dot00 * dot11 - dot01 * dot01);
-	if (fabsf(denom) < 1e-10) return 1;
-
-	const float denom_inv = 1.0f / denom;
-	const float u = (dot11 * dot02 - dot01 * dot12) * denom_inv;
-	const float v = (dot00 * dot12 - dot01 * dot02) * denom_inv;
-
+static int tritest_inside(struct tritest* tt, union v2 p)
+{
+	if (tt->denom_inv == 0.0f) return 0;
+	const union v2 v2 = v2_sub(p,tt->a);
+	const float dot02 = v2_dot(tt->v0,v2);
+	const float dot12 = v2_dot(tt->v1,v2);
+	const float u = (tt->dot11 * dot02 - tt->dot01 * dot12) * tt->denom_inv;
+	const float v = (tt->dot00 * dot12 - tt->dot01 * dot02) * tt->denom_inv;
 	return (u >= 0.0f) && (v >= 0.0f) && (u+v < 1.0f);
 }
 
@@ -1633,10 +1642,13 @@ void rv_fill(void)
 			const float c = v2_cross(v2_sub(p1,p0), v2_sub(p2,p1));
 			if (c <= 0) continue;
 
+			struct tritest tt;
+			tritest_init(&tt, p0, p1, p2);
+
 			int principal = 1;
 			for (int i1 = 0; i1 < n; i1++) {
 				if (i1==p0i || i1==p1i || i1==p2i) continue;
-				if (point_in_triangle(path->vsi[i1], p0, p1, p2)) {
+				if (tritest_inside(&tt, path->vsi[i1])) {
 					principal = 0;
 					break;
 				}
