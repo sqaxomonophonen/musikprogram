@@ -210,11 +210,13 @@ struct font {
 	int line_gap;
 };
 
-struct linestuff {
-	int index;
-	union v2 ps[3];
+#define MAX_PATH_VERTICES (1<<16)
+
+struct path {
+	int n;
+	union v2 vs[MAX_PATH_VERTICES];
+	union v2 vsi[MAX_PATH_VERTICES];
 	float dot_threshold;
-	float width;
 };
 
 #define MAX_BIND_GROUPS (2)
@@ -285,7 +287,7 @@ struct r {
 	int scissor_width;
 	int scissor_height;
 
-	struct linestuff linestuff;
+	struct path path;
 
 	int region_stack_size;
 	struct region region_stack[MAX_REGION_STACK_SIZE];
@@ -817,8 +819,7 @@ static void r_flush(int flags)
 
 		switch (r->mode) {
 		case R_MODE_TILE:
-		case R_MODE_TILEPTN:
-		case R_MODE_VECTOR: {
+		case R_MODE_TILEPTN: {
 			wgpuRenderPassEncoderSetIndexBuffer(
 				pass,
 				r->static_quad_idxbuf,
@@ -827,7 +828,7 @@ static void r_flush(int flags)
 				sizeof(uint16_t)*r->n_static_quad_indices);
 			wgpuRenderPassEncoderDrawIndexed(pass, r->n_static_quad_indices, 1, 0, 0, 0);
 			} break;
-		case R_MODE_TRI: {
+		case R_MODE_VECTOR: {
 			const int divisor = (3*sizeof(struct vector_vtx));
 			assert((n_bytes % divisor) == 0);
 			wgpuRenderPassEncoderDraw(pass, 3*(n_bytes/divisor), 1, 0, 0);
@@ -1001,7 +1002,6 @@ void r_begin(int mode)
 		r->bind_groups[1] = r->current_pattern_bind_group;
 		break;
 	case R_MODE_VECTOR:
-	case R_MODE_TRI:
 		r->pipeline = r->vector_pipeline;
 		r->n_bind_groups = 1;
 		r->bind_groups[0] = r->vector_bind_group;
@@ -1464,12 +1464,36 @@ void rt_clear(void)
 	rt_quad(0,0,w,h);
 }
 
+void rv_tri_c16(union v2 p0, union c16 c0, union v2 p1, union c16 c1, union v2 p2, union c16 c2)
+{
+	struct r* r = &rstate;
+	assert(r->mode == R_MODE_VECTOR);
+
+	struct vector_vtx* pv = r_request(3*sizeof(*pv), 0);
+	pv[0].a_pos = p0;
+	pv[0].a_color = c0;
+	pv[1].a_pos = p1;
+	pv[1].a_color = c1;
+	pv[2].a_pos = p2;
+	pv[2].a_color = c2;
+}
+
+
+void rv_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2)
+{
+	rv_tri_c16(p0, c16pak(c0), p1, c16pak(c1), p2, c16pak(c2));
+}
+
+#define R_EXPAND_QUAD_TO_TRIS(verts) \
+	memcpy(&(verts)[4], &(verts)[0], sizeof((verts)[0])); \
+	memcpy(&(verts)[5], &(verts)[2], sizeof((verts)[0]));
+
 void rv_quad(float x, float y, float w, float h)
 {
 	const union v2 o = get_origin_v2();
 	struct r* r = &rstate;
 	assert(r->mode == R_MODE_VECTOR);
-	struct vector_vtx* pv = r_request(4 * sizeof(*pv), 6);
+	struct vector_vtx* pv = r_request(6 * sizeof(*pv), 0);
 
 	pv[0].a_pos.x = x + o.x;
 	pv[0].a_pos.y = y + o.y;
@@ -1486,13 +1510,135 @@ void rv_quad(float x, float y, float w, float h)
 	pv[3].a_pos.x = x   + o.x;
 	pv[3].a_pos.y = y+h + o.y;
 	pv[3].a_color = r->color3;
+
+	R_EXPAND_QUAD_TO_TRIS(pv)
+
 }
 
-void rv_line_width(float w)
+
+
+void rv_move_to(float x, float y)
 {
-	rstate.linestuff.width = w;
+	struct path* p = &rstate.path;
+	p->vs[0] = v2(x,y);
+	p->n = 1;
 }
 
+void rv_line_to(float x, float y)
+{
+	struct path* p = &rstate.path;
+	assert(p->n > 0);
+	if (p->n >= MAX_PATH_VERTICES) return;
+	p->vs[p->n++] = v2(x,y);
+}
+
+void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
+{
+	// TODO Ramer–Douglas–Peucker algorithm? or something better?
+	struct path* p = &rstate.path;
+	assert(p->n > 0);
+	const union v2 o = get_origin_v2();
+	const union v2 p0 = p->vs[p->n - 1];
+	const union v2 p1 = v2_add(v2(cx0,cy0), o);
+	const union v2 p2 = v2_add(v2(cx1,cy1), o);
+	const union v2 p3 = v2_add(v2(x,y), o);
+	const int N = 75;
+	for (int i = 1; i <= N; i++) {
+		const float t = (float)i / (float)N;
+		const float ts = t*t;   // t^2
+		const float tss = ts*t; // t^3
+		const float t1 = 1.0f - t; // (1-t)
+		const float t1s = t1*t1;   // (1-t)^2
+		const float t1ss = t1s*t1; // (1-t)^3
+		const float c0 = t1ss;
+		const float c1 = 3.0f * t1s * t;
+		const float c2 = 3.0f * t1 * ts;
+		const float c3 = tss;
+
+		union v2 p = v2_scale(c0, p0);
+		p = v2_add(p, v2_scale(c1, p1));
+		p = v2_add(p, v2_scale(c2, p2));
+		p = v2_add(p, v2_scale(c3, p3));
+
+		rv_line_to(p.x, p.y);
+	}
+}
+
+void rv_stroke(float width)
+{
+	assert(!"TODO");
+}
+
+static int line_segment_intersect(union v2 a0, union v2 a1, union v2 b0, union v2 b1)
+{
+	const union v2 s1 = v2_sub(a1,a0);
+	const union v2 s2 = v2_sub(b1,b0);
+
+	const float d = (-s2.x * s1.y + s1.x * s2.y);
+	if (d == 0.0) return 0;
+	const float dinv = 1.0f / d;
+
+	const float s = (-s1.y * (a0.x - b0.x) + s1.x * (a0.y - b0.y)) * dinv;
+	if (!(s >= 0 && s <= 1)) return 0;
+	const float t = ( s2.x * (a0.y - b0.y) - s2.y * (a0.x - b0.x)) * dinv;
+	return (t >= 0 && t <= 1);
+}
+
+void rv_fill(void)
+{
+	struct path* path = &rstate.path;
+
+	int n = path->n;
+	for (int i = 0; i < n; i++) {
+		path->vsi[i] = path->vs[i]; // TODO populate vsi as "inner vertices"
+	}
+
+	while (n > 3) {
+		int ev = 0;
+		for (int i0 = 0; i0 < n; i0++) {
+			const union v2 p0 = path->vsi[(i0+n-1)%n];
+			const union v2 p1 = path->vsi[i0];
+			const union v2 p2 = path->vsi[(i0+1)%n];
+			const float c = v2_cross(v2_sub(p1,p0), v2_sub(p2,p1));
+			if (c <= 0) continue;
+
+			union v2 qp = path->vsi[n-1];
+			int diagonal_intersects_outline = 0;
+			for (int i1 = 0; i1 < n; i1++) {
+				const union v2 q = path->vsi[i1];
+				if ((i1!=i0) && (i1!=i0+1)) {
+					if (line_segment_intersect(p0, p1, qp, q)) {
+						diagonal_intersects_outline = 1;
+						break;
+					}
+				}
+				qp = q;
+			}
+
+			if (!diagonal_intersects_outline) {
+				ev = i0;
+				break;
+			}
+		}
+
+		{
+			const union v2 p0 = path->vsi[(ev+n-1)%n];
+			const union v2 p1 = path->vsi[ev];
+			const union v2 p2 = path->vsi[(ev+1)%n];
+			union c16 c0 = rstate.color0;
+			union c16 c1 = rstate.color0;
+			union c16 c2 = rstate.color0;
+			rv_tri_c16(p0,c0, p1,c1, p2,c2);
+		}
+
+		int to_move = (n - ev) - 1;
+		if (to_move > 0) memmove(&path->vsi[ev], &path->vsi[ev+1], to_move*sizeof(path->vsi[0]));
+
+		n--;
+	}
+}
+
+#if 0
 static void lineflush(union v2* p3)
 {
 	// line between p1 and p2, in the sequence [p0,p1,p2,p3]
@@ -1538,7 +1684,7 @@ static void lineflush(union v2* p3)
 	assert(rstate.mode == R_MODE_VECTOR);
 	const int has_mid = mid_width > 0.0f;
 	const int n_quads = has_mid ? 3 : 2;
-	struct vector_vtx* pv = r_request(n_quads*4*sizeof(*pv), n_quads*6);
+	struct vector_vtx* pv = r_request(n_quads*6*sizeof(*pv), 0);
 
 	union c16 cz = {0};
 	union c16 cs = c16pak(v4_scale(side_width, c16unpak(rstate.color0)));
@@ -1578,7 +1724,9 @@ static void lineflush(union v2* p3)
 		pv[3].a_pos   = v2_add(*p1, v2_scale(t1, ns[0]));
 		pv[3].a_color = c1;
 
-		pv += 4;
+		R_EXPAND_QUAD_TO_TRIS(pv)
+
+		pv += 6;
 	}
 }
 
@@ -1635,25 +1783,7 @@ void rv_end_path(void)
 	lineflush(NULL);
 }
 
-static void linestuff_set_min_angle(float min_angle)
-{
-	struct linestuff* ls = &rstate.linestuff;
-	ls->dot_threshold = cosf(PI + ((min_angle * (1.0f/360.0f)) * PI2));
-}
-
-void r_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2)
-{
-	struct r* r = &rstate;
-	assert(r->mode == R_MODE_TRI);
-
-	struct vector_vtx* pv = r_request(3*sizeof(*pv), 0);
-	pv[0].a_pos = p0;
-	pv[0].a_color = c16pak(c0);
-	pv[1].a_pos = p1;
-	pv[1].a_color = c16pak(c1);
-	pv[2].a_pos = p2;
-	pv[2].a_color = c16pak(c2);
-}
+#endif
 
 void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQueue queue)
 {
@@ -1707,8 +1837,10 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
         #undef DUMP32
         #endif
 
-	linestuff_set_min_angle(20.0f);
-	rv_line_width(2.0f);
+	{
+		const float min_angle = 20.0f;
+		rstate.path.dot_threshold = cosf(PI + ((min_angle * (1.0f/360.0f)) * PI2));
+	}
 
 	font_init(&rstate.font_monospace, fontdata_mono, 0);
 	font_init(&rstate.font_variable, fontdata_variable, 0);

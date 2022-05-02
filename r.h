@@ -10,9 +10,8 @@
 enum {
 	R_MODE_TILE = 1,
 	R_MODE_TILEPTN,
-	R_MODE_PLOT,
 	R_MODE_VECTOR,
-	R_MODE_TRI,
+	//R_MODE_PLOT,
 };
 
 enum postproc_type {
@@ -72,12 +71,14 @@ void r_leave_scissor(void);
 
 
 // R_MODE_VECTOR
+void rv_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2);
 void rv_quad(float x, float y, float w, float h);
-void rv_line_width(float w);
+
 void rv_move_to(float x, float y);
 void rv_line_to(float x, float y);
 void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y);
-void rv_end_path(void);
+void rv_stroke(float width);
+void rv_fill(void);
 
 // R_MODE_TILE
 void rt_font(enum r_font font, int px);
@@ -87,8 +88,6 @@ void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
 void rt_clear(void);
 
-// R_MODE_TRI
-void r_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2);
 
 #define R_H
 #endif

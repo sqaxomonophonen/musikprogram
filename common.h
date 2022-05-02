@@ -47,6 +47,7 @@ static inline float v2_len(union v2 a) { return sqrtf(v2_dot(a,a)); }
 static inline union v2 v2_scale(float scalar, union v2 a) { return v2(a.x*scalar, a.y*scalar); }
 static inline union v2 v2_unit(union v2 a) { return v2_scale(1.0f / v2_len(a), a); }
 static inline union v2 v2_normal(union v2 a) { return v2(a.y, -a.x); }
+static inline float v2_cross(union v2 a, union v2 b) { return a.x*b.y - a.y*b.x; }
 
 static inline union v4 v4(float x, float y, float z, float w) { return (union v4) {.x=x, .y=y, .z=z, .w=w}; }
 
