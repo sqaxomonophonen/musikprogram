@@ -1597,6 +1597,7 @@ struct tritest {
 
 static void tritest_init(struct tritest* tt, union v2 a, union v2 b, union v2 c)
 {
+	tt->a = a;
 	tt->v0 = v2_sub(c,a);
 	tt->v1 = v2_sub(b,a);
 	tt->dot00 = v2_dot(tt->v0,tt->v0);
