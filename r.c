@@ -1660,6 +1660,21 @@ void rv_fill(void)
 		path->vsi[i] = v2_sub(path->vs[i], path->ns[i]);
 	}
 
+	{
+		union c16 cc = rstate.color0;
+		union c16 cz = {0};
+		int i0 = n-1;
+		for (int i1 = 0; i1 < n; i1++) {
+			union v2 p0 = path->vs[i0];
+			union v2 p1 = path->vs[i1];
+			union v2 p2 = path->vsi[i1];
+			union v2 p3 = path->vsi[i0];
+			rv_tri_c16(p0,cz, p1,cz, p2,cc);
+			rv_tri_c16(p0,cz, p2,cc, p3,cc);
+			i0 = i1;
+		}
+	}
+
 	while (n > 3) {
 		int ev = 0;
 
@@ -1697,10 +1712,8 @@ void rv_fill(void)
 			const union v2 p0 = path->vsi[(ev+n-1)%n];
 			const union v2 p1 = path->vsi[ev];
 			const union v2 p2 = path->vsi[(ev+1)%n];
-			union c16 c0 = rstate.color0;
-			union c16 c1 = rstate.color0;
-			union c16 c2 = rstate.color0;
-			rv_tri_c16(p0,c0, p1,c1, p2,c2);
+			union c16 c = rstate.color0;
+			rv_tri_c16(p0,c, p1,c, p2,c);
 		}
 
 		int to_move = (n - ev) - 1;
@@ -1713,10 +1726,8 @@ void rv_fill(void)
 		const union v2 p0 = path->vsi[0];
 		const union v2 p1 = path->vsi[1];
 		const union v2 p2 = path->vsi[2];
-		union c16 c0 = rstate.color0;
-		union c16 c1 = rstate.color0;
-		union c16 c2 = rstate.color0;
-		rv_tri_c16(p0,c0, p1,c1, p2,c2);
+		union c16 c = rstate.color0;
+		rv_tri_c16(p0,c, p1,c, p2,c);
 	}
 }
 
