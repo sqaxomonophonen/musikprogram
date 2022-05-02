@@ -1569,11 +1569,6 @@ void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
 	}
 }
 
-void rv_stroke(float width)
-{
-	assert(!"TODO");
-}
-
 #if 0
 static int line_segment_intersect(union v2 a0, union v2 a1, union v2 b0, union v2 b1)
 {
@@ -1731,152 +1726,72 @@ void rv_fill(void)
 	}
 }
 
-#if 0
-static void lineflush(union v2* p3)
+void rv_stroke(float width, int close)
 {
-	// line between p1 and p2, in the sequence [p0,p1,p2,p3]
-	struct linestuff* ls = &rstate.linestuff;
-	if (ls->index < 2) return;
-	union v2* p2 =                  &ls->ps[(ls->index-1)%3];
-	union v2* p1 =                  &ls->ps[(ls->index-2)%3];
-	union v2* p0 = ls->index >= 3 ? &ls->ps[(ls->index-3)%3] : NULL;
+	if (width <= 0.0f) return;
 
-	union v2 u12 = v2_unit(v2_sub(*p2, *p1));
-	union v2 n12 = v2_normal(u12);
+	pathprep();
 
-	union v2 ns[2];
-	for (int c = 0; c < 2; c++) {
-		union v2* e0;
-		union v2* e1;
-		float sign;
-		if (c == 0) {
-			e0 = p0;
-			e1 = p1;
-			sign = 1.0f;
-		} else {
-			e0 = p3;
-			e1 = p2;
-			sign = -1.0f;
+	struct path* path = &rstate.path;
+	const int n = path->n;
+
+	const float mid_width = width-1.0f;
+	const int has_mid = mid_width > 0.0f;
+	const float side_width = has_mid ? 1.0f : 1.0f+mid_width;
+
+	int n_lanes = has_mid ? 3 : 2;
+
+	float lane_t[4];
+	union c16 lane_c16[4];
+	if (has_mid) {
+		lane_t[1] = -mid_width * 0.5;
+		lane_t[2] = mid_width * 0.5;
+		lane_t[0] = lane_t[1] - side_width;
+		lane_t[3] = lane_t[2] + side_width;
+
+		lane_c16[0] = lane_c16[3] = (union c16){0};
+		lane_c16[1] = lane_c16[2] = rstate.color0;
+	} else {
+		lane_t[0] = -side_width;
+		lane_t[1] = 0.0f;
+		lane_t[2] = -lane_t[0];
+
+		lane_c16[0] = lane_c16[2] = (union c16){0};
+		lane_c16[1] = c16pak(v4_scale(side_width, c16unpak(rstate.color0)));
+	}
+
+	union v2 b0s[4];
+	union v2 b1s[4];
+
+	union v2* p0s = b0s;
+	union v2* p1s = b1s;
+
+	const int nc = n + (close?1:0);
+	for (int ii = 0; ii < nc; ii++) {
+		const int i = ii % n;
+		for (int j = 0; j <= n_lanes; j++) {
+			p1s[j] = v2_add(path->vs[i], v2_scale(lane_t[j], path->ns[i]));
 		}
-		union v2 n = n12;
-		if (e0 != NULL) {
-			union v2 u01 = v2_scale(sign, v2_unit(v2_sub(*e1, *e0)));
-			if (v2_dot(u01, u12) > ls->dot_threshold) {
-				n = v2_unit(v2_add(n, v2_normal(u01)));
+
+		if (ii > 0) {
+			for (int j0 = 0; j0 < n_lanes; j0++) {
+				const int j1 = j0+1;
+				union v2 p0 = p0s[j0];
+				union v2 p1 = p1s[j0];
+				union v2 p2 = p1s[j1];
+				union v2 p3 = p0s[j1];
+				union c16 c0 = lane_c16[j0];
+				union c16 c1 = lane_c16[j1];
+				rv_tri_c16(p0,c0, p1,c0, p2,c1);
+				rv_tri_c16(p0,c0, p2,c1, p3,c1);
 			}
 		}
-		ns[c] = v2_scale(1.0f / v2_dot(n,n12), n);
-	}
 
-	const float mid_width = ls->width-1.0f;
-	float side_width = mid_width > 0.0f ? 1.0f : 1.0f+mid_width;
-	if (side_width <= 0.0f) return;
-
-	const float mt = mid_width < 0.0f ? 0.0f : mid_width*0.5f;
-
-	assert(rstate.mode == R_MODE_VECTOR);
-	const int has_mid = mid_width > 0.0f;
-	const int n_quads = has_mid ? 3 : 2;
-	struct vector_vtx* pv = r_request(n_quads*6*sizeof(*pv), 0);
-
-	union c16 cz = {0};
-	union c16 cs = c16pak(v4_scale(side_width, c16unpak(rstate.color0)));
-
-	for (int lane = 0; lane < 3; lane++) {
-		float t0,t1;
-		union c16 c0,c1;
-		if (lane == 0) {
-			t0 = -mt-side_width;
-			t1 = t0+side_width;
-			c0 = cz;
-			c1 = cs;
-		} else if (lane == 1) {
-			t0 = mt;
-			t1 = t0+side_width;
-			c0 = cs;
-			c1 = cz;
-		} else if (lane == 2) {
-			if (!has_mid) continue;
-			t0 = -mt;
-			t1 = mt;
-			c0 = cs;
-			c1 = cs;
-		} else {
-			assert(!"UNREACHABLE");
-		}
-
-		pv[0].a_pos   = v2_add(*p1, v2_scale(t0, ns[0]));
-		pv[0].a_color = c0;
-
-		pv[1].a_pos   = v2_add(*p2, v2_scale(t0, ns[1]));
-		pv[1].a_color = c0;
-
-		pv[2].a_pos   = v2_add(*p2, v2_scale(t1, ns[1]));
-		pv[2].a_color = c1;
-
-		pv[3].a_pos   = v2_add(*p1, v2_scale(t1, ns[0]));
-		pv[3].a_color = c1;
-
-		R_EXPAND_QUAD_TO_TRIS(pv)
-
-		pv += 6;
+		union v2* tmp = p0s;
+		p0s = p1s;
+		p1s = tmp;
 	}
 }
-
-void rv_move_to(float x, float y)
-{
-	struct linestuff* ls = &rstate.linestuff;
-	if (ls->index >= 2) rv_end_path();
-	ls->ps[0] = v2_add(v2(x,y), get_origin_v2());
-	ls->index = 1;
-}
-
-void rv_line_to(float x, float y)
-{
-	struct linestuff* ls = &rstate.linestuff;
-	union v2 p = v2_add(v2(x,y), get_origin_v2());
-	if (ls->index >= 2) lineflush(&p);
-	ls->ps[(ls->index++)%3] = p;
-}
-
-void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
-{
-	// TODO Ramer–Douglas–Peucker algorithm? or something better?
-	struct linestuff* ls = &rstate.linestuff;
-	assert((ls->index-1)>=0);
-	const union v2 o = get_origin_v2();
-	const union v2 p0 = ls->ps[(ls->index-1)%3];
-	const union v2 p1 = v2_add(v2(cx0,cy0), o);
-	const union v2 p2 = v2_add(v2(cx1,cy1), o);
-	const union v2 p3 = v2_add(v2(x,y), o);
-	const int N = 75;
-	for (int i = 1; i <= N; i++) {
-		const float t = (float)i / (float)N;
-		const float ts = t*t;   // t^2
-		const float tss = ts*t; // t^3
-		const float t1 = 1.0f - t; // (1-t)
-		const float t1s = t1*t1;   // (1-t)^2
-		const float t1ss = t1s*t1; // (1-t)^3
-		const float c0 = t1ss;
-		const float c1 = 3.0f * t1s * t;
-		const float c2 = 3.0f * t1 * ts;
-		const float c3 = tss;
-
-		union v2 p = v2_scale(c0, p0);
-		p = v2_add(p, v2_scale(c1, p1));
-		p = v2_add(p, v2_scale(c2, p2));
-		p = v2_add(p, v2_scale(c3, p3));
-
-		rv_line_to(p.x, p.y);
-	}
-}
-
-void rv_end_path(void)
-{
-	lineflush(NULL);
-}
-
-#endif
 
 void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQueue queue)
 {

@@ -77,7 +77,7 @@ void rv_quad(float x, float y, float w, float h);
 void rv_move_to(float x, float y);
 void rv_line_to(float x, float y);
 void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y);
-void rv_stroke(float width);
+void rv_stroke(float width, int close);
 void rv_fill(void);
 
 // R_MODE_TILE
