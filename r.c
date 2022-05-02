@@ -1469,12 +1469,14 @@ void rv_tri_c16(union v2 p0, union c16 c0, union v2 p1, union c16 c1, union v2 p
 	struct r* r = &rstate;
 	assert(r->mode == R_MODE_VECTOR);
 
+	union v2 o = get_origin_v2();
+
 	struct vector_vtx* pv = r_request(3*sizeof(*pv), 0);
-	pv[0].a_pos = p0;
+	pv[0].a_pos = v2_add(p0,o);
 	pv[0].a_color = c0;
-	pv[1].a_pos = p1;
+	pv[1].a_pos = v2_add(p1,o);
 	pv[1].a_color = c1;
-	pv[2].a_pos = p2;
+	pv[2].a_pos = v2_add(p2,o);
 	pv[2].a_color = c2;
 }
 
