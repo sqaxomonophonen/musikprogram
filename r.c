@@ -1638,6 +1638,16 @@ void rv_fill(void)
 
 		n--;
 	}
+
+	if (n == 3) {
+		const union v2 p0 = path->vsi[0];
+		const union v2 p1 = path->vsi[1];
+		const union v2 p2 = path->vsi[2];
+		union c16 c0 = rstate.color0;
+		union c16 c1 = rstate.color0;
+		union c16 c2 = rstate.color0;
+		rv_tri_c16(p0,c0, p1,c1, p2,c2);
+	}
 }
 
 #if 0
