@@ -213,10 +213,12 @@ struct font {
 #define MAX_PATH_VERTICES (1<<16)
 
 struct path {
+	float dot_threshold;
+	int prepped;
 	int n;
 	union v2 vs[MAX_PATH_VERTICES];
+	union v2 ns[MAX_PATH_VERTICES];
 	union v2 vsi[MAX_PATH_VERTICES];
-	float dot_threshold;
 };
 
 #define MAX_BIND_GROUPS (2)
@@ -1521,26 +1523,27 @@ void rv_quad(float x, float y, float w, float h)
 
 void rv_move_to(float x, float y)
 {
-	struct path* p = &rstate.path;
-	p->vs[0] = v2(x,y);
-	p->n = 1;
+	struct path* path = &rstate.path;
+	path->vs[0] = v2(x,y);
+	path->n = 1;
+	path->prepped = 0;
 }
 
 void rv_line_to(float x, float y)
 {
-	struct path* p = &rstate.path;
-	assert(p->n > 0);
-	if (p->n >= MAX_PATH_VERTICES) return;
-	p->vs[p->n++] = v2(x,y);
+	struct path* path = &rstate.path;
+	assert((path->n > 0) && "path not begun");
+	if (path->n >= MAX_PATH_VERTICES) return;
+	path->vs[path->n++] = v2(x,y);
 }
 
 void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
 {
 	// TODO Ramer–Douglas–Peucker algorithm? or something better?
-	struct path* p = &rstate.path;
-	assert(p->n > 0);
+	struct path* path = &rstate.path;
+	assert((path->n > 0) && "path not begun");
 	const union v2 o = get_origin_v2();
-	const union v2 p0 = p->vs[p->n - 1];
+	const union v2 p0 = path->vs[path->n - 1];
 	const union v2 p1 = v2_add(v2(cx0,cy0), o);
 	const union v2 p2 = v2_add(v2(cx1,cy1), o);
 	const union v2 p3 = v2_add(v2(x,y), o);
@@ -1620,14 +1623,41 @@ static int tritest_inside(struct tritest* tt, union v2 p)
 	return (u >= 0.0f) && (v >= 0.0f) && (u+v < 1.0f);
 }
 
+static void pathprep()
+{
+	struct path* path = &rstate.path;
+	if (path->prepped) return;
+	path->prepped = 1;
+
+	const int n = path->n;
+	if (n < 3) return;
+
+	union v2 p0 = path->vs[n-2];
+	int i1 = n-1;
+	union v2 p1 = path->vs[i1];
+	for (int i2 = 0; i2 < n; i2++) {
+		const union v2 p2  = path->vs[i2];
+		const union v2 n01 = v2_unit(v2_normal(v2_sub(p1,p0)));
+		const union v2 n12 = v2_unit(v2_normal(v2_sub(p2,p1)));
+		const union v2 n   = v2_unit(v2_add(n01,n12));
+		const float s      = 1.0f / v2_dot(n, n01);
+		path->ns[i1] = v2_scale(s,n);
+		i1 = i2;
+		p0 = p1;
+		p1 = p2;
+	}
+}
+
 void rv_fill(void)
 {
+	pathprep();
+
 	struct path* path = &rstate.path;
 
 	int n = path->n;
 	if (n < 3) return;
 	for (int i = 0; i < n; i++) {
-		path->vsi[i] = path->vs[i]; // TODO populate vsi as "inner vertices"
+		path->vsi[i] = v2_sub(path->vs[i], path->ns[i]);
 	}
 
 	while (n > 3) {
