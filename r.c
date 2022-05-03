@@ -1542,11 +1542,10 @@ void rv_bezier_to(float cx0, float cy0, float cx1, float cy1, float x, float y)
 	// TODO Ramer–Douglas–Peucker algorithm? or something better?
 	struct path* path = &rstate.path;
 	assert((path->n > 0) && "path not begun");
-	const union v2 o = get_origin_v2();
 	const union v2 p0 = path->vs[path->n - 1];
-	const union v2 p1 = v2_add(v2(cx0,cy0), o);
-	const union v2 p2 = v2_add(v2(cx1,cy1), o);
-	const union v2 p3 = v2_add(v2(x,y), o);
+	const union v2 p1 = v2(cx0,cy0);
+	const union v2 p2 = v2(cx1,cy1);
+	const union v2 p3 = v2(x,y);
 	const int N = 75;
 	for (int i = 1; i <= N; i++) {
 		const float t = (float)i / (float)N;
