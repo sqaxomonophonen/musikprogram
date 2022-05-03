@@ -160,6 +160,10 @@ int main(int argc, char** argv)
 	stm_setup();
 	gpudl_init();
 
+	gpudl_set_required_limits(&(WGPULimits){
+		.maxBindGroups = 2,
+	});
+
 	wgpuSetLogCallback(wgpu_native_log_callback);
 	//wgpuSetLogLevel(WGPULogLevel_Trace);
 	//wgpuSetLogLevel(WGPULogLevel_Debug);
