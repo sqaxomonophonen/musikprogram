@@ -69,6 +69,10 @@ void r_no_scissor(void);
 void r_enter_scissor(int x, int y, int w, int h);
 void r_leave_scissor(void);
 
+// TODO replace above with these (r_clip() requires software clipping)
+void r_offset(int dx, int dx);
+void r_clip(int w, int h);
+
 
 // R_MODE_VECTOR
 void rv_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2);
