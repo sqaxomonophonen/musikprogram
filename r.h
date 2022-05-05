@@ -69,8 +69,8 @@ void r_no_scissor(void);
 void r_enter_scissor(int x, int y, int w, int h);
 void r_leave_scissor(void);
 
-// TODO replace above with these (r_clip() requires software clipping)
-void r_offset(int dx, int dx);
+// TODO replace above with these
+void r_offset(int dx, int dx); // absolute offset
 void r_clip(int w, int h); // software clipping region; relative to r_offset()
 void r_no_clip();
 
