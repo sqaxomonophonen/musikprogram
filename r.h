@@ -71,7 +71,8 @@ void r_leave_scissor(void);
 
 // TODO replace above with these (r_clip() requires software clipping)
 void r_offset(int dx, int dx);
-void r_clip(int w, int h);
+void r_clip(int w, int h); // software clipping region; relative to r_offset()
+void r_no_clip();
 
 
 // R_MODE_VECTOR
