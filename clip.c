@@ -38,4 +38,6 @@ void clip_triangle(struct clip* clip, struct rect* clip_rect, union v2* p0, unio
 {
 	memset(clip, 0, sizeof *clip);
 	assert(!"TODO");
+	// TODO https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm
+	// TODO https://codeplea.com/triangular-interpolation
 }
