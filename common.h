@@ -52,6 +52,7 @@ static inline union v2 v2_scale(float scalar, union v2 a) { return v2(a.x*scalar
 static inline union v2 v2_unit(union v2 a) { return v2_scale(1.0f / v2_len(a), a); }
 static inline union v2 v2_normal(union v2 a) { return v2(a.y, -a.x); }
 static inline float v2_cross(union v2 a, union v2 b) { return a.x*b.y - a.y*b.x; }
+static inline union v2 v2_lerp(float t, union v2 a, union v2 b) { return v2_add(v2_scale(1.0f-t,a), v2_scale(t,b)); }
 
 static inline union v4 v4_add(union v4 a, union v4 b) { return v4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w); }
 static inline union v4 v4_scale(float scalar, union v4 a) { return v4(a.x*scalar, a.y*scalar, a.z*scalar, a.w*scalar); }
