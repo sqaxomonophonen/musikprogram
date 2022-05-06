@@ -69,7 +69,6 @@ static int vs_yclip(int* n, union v2* vs, float y, float ny)
 {
 	VS_CLIP_INNER(y)
 }
-
 #undef VS_CLIP_INNER
 
 void clip_triangle(struct clip* clip, struct rect* clip_rect, union v2* p0, union v2* p1, union v2* p2)
@@ -102,11 +101,15 @@ void clip_triangle(struct clip* clip, struct rect* clip_rect, union v2* p0, unio
 			assert(n == 3);
 			clip->result = CLIP_NONE;
 		}
+		for (int i = 0; i < n; i++) {
+			const union v2 p = vs[i];
+			clip->vs[i].xy = p;
+			const float ppx = p.x - (p2->x);
+			const float ppy = p.y - (p2->y);
+			const float d = ((p1->y)-(p2->y)) * ((p0->x)-(p2->x)) + ((p2->x)-(p1->x)) * ((p0->y)-(p2->y));
+			const float w0 = ((p1->y)-(p2->y))*ppx + ((p2->x)-(p1->x))*ppy;
+			const float w1 = ((p2->y)-(p0->y))*ppx + ((p0->x)-(p2->x))*ppy;
+			clip->vs[i].uv = v2(w0/d, w1/d);
+		}
 	}
-
-	// TODO update barycentric UVs
-
-	assert(!"TODO");
-	// TODO https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm
-	// TODO https://codeplea.com/triangular-interpolation
 }
