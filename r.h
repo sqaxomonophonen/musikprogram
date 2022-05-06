@@ -7,6 +7,43 @@
 
 #define MAX_INTENSITY (16)
 
+union c16 {
+	uint16_t c[4];
+	union {
+		uint16_t r,g,b,a;
+	};
+};
+
+static inline uint16_t fto16(float v)
+{
+	if (v < 0.0f) v = 0.0f;
+	if (v > 1.0f) v = 1.0f;
+	return roundf(v * 65535.0f);
+}
+
+static inline float u16tof(uint16_t v)
+{
+	return (float)v * (1.0f / 65535.0f);
+}
+
+static inline union c16 c16pak(union v4 rgba)
+{
+	union c16 c;
+	const float s = 1.0f / MAX_INTENSITY;
+	for (int i = 0; i < 3; i++) c.c[i] = fto16(rgba.s[i] * s);
+	c.c[3] = fto16(rgba.s[3]);
+	return c;
+}
+
+static inline union v4 c16unpak(union c16 c)
+{
+	return v4(
+		u16tof(c.c[0]) * MAX_INTENSITY,
+		u16tof(c.c[1]) * MAX_INTENSITY,
+		u16tof(c.c[2]) * MAX_INTENSITY,
+		u16tof(c.c[3]));
+}
+
 enum {
 	R_MODE_TILE = 1,
 	R_MODE_TILEPTN,
@@ -59,20 +96,12 @@ void rptn_free(int pattern);
 void rptn_set(int pattern);
 
 void rcol_plain(union v4 color);
+void rcol_lgrad(union v4 color0, union v4 color1, union v2 basis);
 void rcol_xgrad(union v4 color0, union v4 color1);
 void rcol_ygrad(union v4 color0, union v4 color1);
 
-void r_enter(int x, int y, int w, int h);
-void r_leave(void);
-void r_scissor(void);
-void r_no_scissor(void);
-void r_enter_scissor(int x, int y, int w, int h);
-void r_leave_scissor(void);
-
-// TODO replace above with these
-void r_offset(int dx, int dx); // absolute offset
-void r_clip(int w, int h); // software clipping region; relative to r_offset()
-void r_no_clip();
+void r_offset(int x0, int y0);
+void r_clip(int x, int y, int w, int h);
 
 
 // R_MODE_VECTOR

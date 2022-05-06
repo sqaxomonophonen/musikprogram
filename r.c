@@ -9,6 +9,7 @@
 
 #include "embedded_resources.h"
 #include "r.h"
+#include "clip.h"
 #include "stb_ds.h"
 
 // couldn't convince myself that dynamic atlas resizing is worth the trouble :)
@@ -43,21 +44,6 @@
 #define GLYPHDEF_SIZE_BITS (9)
 #define GLYPHDEF_BANK_BITS (2)
 
-#define MAX_REGION_STACK_SIZE (256)
-
-struct region {
-	int x,y,w,h;
-};
-
-static inline int region_intersect(struct region a, struct region b)
-{
-	return     ( a.x     < b.x+b.w )
-		&& ( a.x+a.w > b.x     )
-		&& ( a.y     < b.y+b.h )
-		&& ( a.y+a.h > b.y     )
-		;
-}
-
 union glyphdef {
 	uint32_t u32;
 	struct {
@@ -77,43 +63,6 @@ static inline union glyphdef encode_glyphdef(int bank, int size, int code)
 		.size = size,
 		.code = code,
 	};
-}
-
-union c16 {
-	uint16_t c[4];
-	union {
-		uint16_t r,g,b,a;
-	};
-};
-
-static inline uint16_t fto16(float v)
-{
-	if (v < 0.0f) v = 0.0f;
-	if (v > 1.0f) v = 1.0f;
-	return roundf(v * 65535.0f);
-}
-
-static inline float u16tof(uint16_t v)
-{
-	return (float)v * (1.0f / 65535.0f);
-}
-
-static inline union c16 c16pak(union v4 rgba)
-{
-	union c16 c;
-	const float s = 1.0f / MAX_INTENSITY;
-	for (int i = 0; i < 3; i++) c.c[i] = fto16(rgba.s[i] * s);
-	c.c[3] = fto16(rgba.s[3]);
-	return c;
-}
-
-static inline union v4 c16unpak(union c16 c)
-{
-	return v4(
-		u16tof(c.c[0]) * MAX_INTENSITY,
-		u16tof(c.c[1]) * MAX_INTENSITY,
-		u16tof(c.c[2]) * MAX_INTENSITY,
-		u16tof(c.c[3]));
 }
 
 struct ppgauss_uni {
@@ -267,7 +216,8 @@ struct r {
 	WGPUBindGroup bind_groups[MAX_BIND_GROUPS];
 	float seed;
 
-	union c16 color0, color1, color2, color3;
+	union c16 color[2];
+	union v2  gradient_basis;
 
 	enum r_font font;
 	int font_px;
@@ -283,16 +233,10 @@ struct r {
 	union glyphdef glyphdef_requests[MAX_TILE_QUADS];
 	union glyphdef missing_glyphdefs[MAX_TILE_QUADS];
 
-	int scissor;
-	int scissor_x;
-	int scissor_y;
-	int scissor_width;
-	int scissor_height;
+	int offset_x0, offset_y0;
+	int clip_x, clip_y, clip_w, clip_h;
 
 	struct path path;
-
-	int region_stack_size;
-	struct region region_stack[MAX_REGION_STACK_SIZE];
 
 	int              is_pattern_frame;
 	WGPUBindGroup    current_pattern_bind_group;
@@ -804,10 +748,6 @@ static void r_flush(int flags)
 			}
 		);
 
-		if (r->scissor) {
-			wgpuRenderPassEncoderSetScissorRect(pass, r->scissor_x, r->scissor_y, r->scissor_width, r->scissor_height);
-		}
-
 		assert(r->pipeline != NULL);
 		wgpuRenderPassEncoderSetPipeline(pass, r->pipeline);
 
@@ -1023,91 +963,20 @@ void r_end(void)
 	r->mode = 0;
 }
 
-static inline struct region get_region()
+void r_offset(int x0, int y0)
 {
 	struct r* r = &rstate;
-	struct region rg;
-	if (r->region_stack_size > 0) {
-		rg = r->region_stack[r->region_stack_size-1];
-	} else {
-		rg.x = 0;
-		rg.y = 0;
-		rg.w = r->width;
-		rg.h = r->height;
-	}
-	return rg;
+	r->offset_x0 = x0;
+	r->offset_y0 = y0;
 }
 
-static inline void get_region_xywh(int* x, int* y, int* w, int* h)
-{
-	struct region rg = get_region();
-	if (x) *x = rg.x;
-	if (y) *y = rg.y;
-	if (w) *w = rg.w;
-	if (h) *h = rg.h;
-}
-
-static inline void get_origin_xy(int* x, int* y)
-{
-	get_region_xywh(x,y,NULL,NULL);
-}
-
-static inline union v2 get_origin_v2()
-{
-	int x,y;
-	get_origin_xy(&x,&y);
-	return v2(x,y);
-}
-
-void r_enter(int x, int y, int w, int h)
+void r_clip(int x, int y, int w, int h)
 {
 	struct r* r = &rstate;
-	assert(r->region_stack_size < MAX_REGION_STACK_SIZE);
-	int x0,y0,w0,h0;
-	get_region_xywh(&x0,&y0,&w0,&h0);
-	if (x < 0) { w += x; x = 0; }
-	if (y < 0) { h += y; y = 0; }
-	if (x+w > w0) w = w0-x;
-	if (y+h > h0) h = h0-y;
-	struct region* rg = &r->region_stack[r->region_stack_size++];
-	rg->x = x0+x;
-	rg->y = y0+y;
-	rg->w = w;
-	rg->h = h;
-}
-
-void r_leave(void)
-{
-	struct r* r = &rstate;
-	assert(r->region_stack_size > 0);
-	r->region_stack_size--;
-}
-
-void r_scissor(void)
-{
-	struct r* r = &rstate;
-	assert((r->mode == 0) && "scissor must be activated outside of r_begin()/r_end()");
-	r->scissor = 1;
-	get_region_xywh(&r->scissor_x, &r->scissor_y, &r->scissor_width, &r->scissor_height);
-}
-
-void r_no_scissor(void)
-{
-	struct r* r = &rstate;
-	assert((r->mode == 0) && "scissor must be deactivated outside of r_begin()/r_end()");
-	r->scissor = 0;
-}
-
-void r_enter_scissor(int x, int y, int w, int h)
-{
-	r_enter(x,y,w,h);
-	r_scissor();
-}
-
-void r_leave_scissor(void)
-{
-	r_no_scissor();
-	r_leave();
+	r->clip_x = x;
+	r->clip_y = y;
+	r->clip_w = w;
+	r->clip_h = h;
 }
 
 static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
@@ -1214,31 +1083,27 @@ void rptn_set(int pattern)
 	r->current_pattern_bind_group = get_pattern(pattern)->bind_group;
 }
 
-void rcol_plain(union v4 color)
+void rcol_lgrad(union v4 color0, union v4 color1, union v2 basis)
 {
 	struct r* r = &rstate;
-	r->color0 = c16pak(color);
-	r->color1 = r->color0;
-	r->color2 = r->color0;
-	r->color3 = r->color0;
+	r->color[0] = c16pak(color0);
+	r->color[1] = c16pak(color1);
+	r->gradient_basis = basis;
+}
+
+void rcol_plain(union v4 color)
+{
+	rcol_lgrad(color, color, v2(0,0));
 }
 
 void rcol_xgrad(union v4 color0, union v4 color1)
 {
-	struct r* r = &rstate;
-	r->color0 = c16pak(color0);
-	r->color1 = c16pak(color1);
-	r->color2 = r->color1;
-	r->color3 = r->color0;
+	rcol_lgrad(color0, color1, v2(1,0));
 }
 
 void rcol_ygrad(union v4 color0, union v4 color1)
 {
-	struct r* r = &rstate;
-	r->color0 = c16pak(color0);
-	r->color1 = r->color0;
-	r->color2 = c16pak(color1);
-	r->color3 = r->color2;
+	rcol_lgrad(color0, color1, v2(0,1));
 }
 
 void rt_font(enum r_font font, int px)
@@ -1286,38 +1151,64 @@ static int utf8_decode(const char** c0z, int* n)
 	return -1;
 }
 
+static union v2 get_offset()
+{
+	return v2(rstate.offset_x0, rstate.offset_y0);
+}
+
+static struct rect get_clip_rect()
+{
+	struct r* r = &rstate;
+	return rect(r->clip_x, r->clip_y, r->clip_w, r->clip_h);
+}
+
+static int quadclip(struct clip* clip, int x, int y, int w, int h)
+{
+	struct rect clip_rect = get_clip_rect();
+	const union v2 o = get_offset();
+	struct rect input_rect = rect(x+o.x, y+o.y, w, h);
+	clip_rectangle(clip, &clip_rect, &input_rect);
+	if (clip->result == CLIP_ALL) {
+		assert(clip->n == 0);
+		return 0;
+	} else {
+		assert(clip->n == 4);
+		return 1;
+	}
+}
+
+static int triclip(struct clip* clip, union v2* p0, union v2* p1, union v2* p2)
+{
+	struct rect clip_rect = get_clip_rect();
+	const union v2 o = get_offset();
+	union v2 pp0 = v2_add(*p0, o);
+	union v2 pp1 = v2_add(*p1, o);
+	union v2 pp2 = v2_add(*p2, o);
+	clip_triangle(clip, &clip_rect, &pp0, &pp1, &pp2);
+	return clip->result != CLIP_ALL;
+}
+
 static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 {
-	assert(rstate.mode == R_MODE_TILE || rstate.mode == R_MODE_TILEPTN);
+	struct r* r = &rstate;
+	assert(r->mode == R_MODE_TILE || r->mode == R_MODE_TILEPTN);
 	if ((w <= 0) || (h <= 0)) return;
 
-	const struct region region = get_region();
-	const struct region put_region = (struct region) {.x=x+region.x, .y=y+region.y, .w=w, .h=h};
-	if (!region_intersect(region, put_region)) return;
+	struct clip clip;
+	if (!quadclip(&clip, x, y, w, h)) return;
 
 	struct tile_vtx* pv = r_request(4 * sizeof(*pv), 6);
 
-	const union v2 dst = v2(x,y);
-	const float ox = region.x;
-	const float oy = region.y;
+	for (int i = 0; i < 4; i++) {
+		pv[i].a_pos   = clip.vs[i].xy;
+		pv[i].a_uv    = clip.vs[i].uv; // these are temporary UVs; expanded by r_flush()
+		const float t = v2_dot(clip.vs[i].uv, r->gradient_basis);
+		pv[i].a_color = c16pak(v4_lerp(t, c16unpak(r->color[0]), c16unpak(r->color[1])));
+	}
 
-	// NOTE a_uv is set by r_flush()
-
-	pv[0].a_pos   = v2_add(dst, v2( +ox,  +oy));
-	pv[0].a_color = rstate.color0;
-
-	pv[1].a_pos   = v2_add(dst, v2(w+ox,  +oy));
-	pv[1].a_color = rstate.color1;
-
-	pv[2].a_pos   = v2_add(dst, v2(w+ox, h+oy));
-	pv[2].a_color = rstate.color2;
-
-	pv[3].a_pos   = v2_add(dst, v2( +ox, h+oy));
-	pv[3].a_color = rstate.color3;
-
-	const int index = ((rstate.vtxbuf_cursor - rstate.cursor0) / (4*sizeof(*pv))) - 1;
+	const int index = ((r->vtxbuf_cursor - r->cursor0) / (4*sizeof(*pv))) - 1;
 	assert(0 <= index && index < MAX_TILE_QUADS);
-	rstate.glyphdef_requests[index] = encode_glyphdef(bank, size, code);
+	r->glyphdef_requests[index] = encode_glyphdef(bank, size, code);
 }
 
 void rt_printf(const char* fmt, ...)
@@ -1461,9 +1352,8 @@ void rt_quad(float x, float y, float w, float h)
 
 void rt_clear(void)
 {
-	int w,h;
-	get_region_xywh(NULL,NULL,&w,&h);
-	rt_quad(0,0,w,h);
+	struct r* r = &rstate;
+	rt_quad(0, 0, r->width, r->height);
 }
 
 void rv_tri_c16(union v2 p0, union c16 c0, union v2 p1, union c16 c1, union v2 p2, union c16 c2)
@@ -1471,17 +1361,43 @@ void rv_tri_c16(union v2 p0, union c16 c0, union v2 p1, union c16 c1, union v2 p
 	struct r* r = &rstate;
 	assert(r->mode == R_MODE_VECTOR);
 
-	union v2 o = get_origin_v2();
+	struct clip clip;
+	if (!triclip(&clip, &p0, &p1, &p2)) return;
 
-	struct vector_vtx* pv = r_request(3*sizeof(*pv), 0);
-	pv[0].a_pos = v2_add(p0,o);
-	pv[0].a_color = c0;
-	pv[1].a_pos = v2_add(p1,o);
-	pv[1].a_color = c1;
-	pv[2].a_pos = v2_add(p2,o);
-	pv[2].a_color = c2;
+	if (clip.result == CLIP_NONE) {
+		// cheap path; no clipping
+		assert(clip.n == 3);
+		struct vector_vtx* pv = r_request(3*sizeof(*pv), 0);
+		pv[0].a_pos = clip.vs[0].xy;
+		pv[0].a_color = c0;
+		pv[1].a_pos = clip.vs[1].xy;
+		pv[1].a_color = c1;
+		pv[2].a_pos = clip.vs[2].xy;
+		pv[2].a_color = c2;
+	} else {
+		const int n_tris = clip.n - 2;
+
+		union c16 cs[ARRAY_LENGTH(clip.vs)];
+		const union v4 cc0 = c16unpak(c0);
+		const union v4 cc1 = c16unpak(c1);
+		const union v4 cc2 = c16unpak(c2);
+		for (int i = 0; i < clip.n; i++) {
+			union v3 uvw = clip_get_barycentric_coord(&clip, i);
+			cs[i] = c16pak(v4_add(v4_scale(uvw.u, cc0), v4_add(v4_scale(uvw.v, cc1), v4_scale(uvw.w, cc2))));
+		}
+
+		struct vector_vtx* pv = r_request(n_tris*3*sizeof(*pv), 0);
+		for (int i = 0; i < n_tris; i++) {
+			pv[0].a_pos = clip.vs[0].xy;
+			pv[0].a_color = cs[0];
+			pv[1].a_pos = clip.vs[1+i].xy;
+			pv[1].a_color = cs[1+i];
+			pv[2].a_pos = clip.vs[2+i].xy;
+			pv[2].a_color = cs[2+i];
+			pv += 3;
+		}
+	}
 }
-
 
 void rv_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2)
 {
@@ -1494,32 +1410,21 @@ void rv_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, uni
 
 void rv_quad(float x, float y, float w, float h)
 {
-	const union v2 o = get_origin_v2();
 	struct r* r = &rstate;
 	assert(r->mode == R_MODE_VECTOR);
+
+	struct clip clip;
+	if (!quadclip(&clip, x, y, w, h)) return;
+
 	struct vector_vtx* pv = r_request(6 * sizeof(*pv), 0);
-
-	pv[0].a_pos.x = x + o.x;
-	pv[0].a_pos.y = y + o.y;
-	pv[0].a_color = r->color0;
-
-	pv[1].a_pos.x = x+w + o.x;
-	pv[1].a_pos.y = y   + o.y;
-	pv[1].a_color = r->color1;
-
-	pv[2].a_pos.x = x+w + o.x;
-	pv[2].a_pos.y = y+h + o.y;
-	pv[2].a_color = r->color2;
-
-	pv[3].a_pos.x = x   + o.x;
-	pv[3].a_pos.y = y+h + o.y;
-	pv[3].a_color = r->color3;
+	for (int i = 0; i < 4; i++) {
+		pv[i].a_pos   = clip.vs[i].xy;
+		const float t = v2_dot(clip.vs[i].uv, r->gradient_basis);
+		pv[i].a_color = c16pak(v4_lerp(t, c16unpak(r->color[0]), c16unpak(r->color[1])));
+	}
 
 	R_EXPAND_QUAD_TO_TRIS(pv)
-
 }
-
-
 
 void rv_move_to(float x, float y)
 {
@@ -1655,7 +1560,7 @@ void rv_fill(void)
 	}
 
 	{
-		union c16 cc = rstate.color0;
+		union c16 cc = rstate.color[0];
 		union c16 cz = {0};
 		int i0 = n-1;
 		for (int i1 = 0; i1 < n; i1++) {
@@ -1706,7 +1611,7 @@ void rv_fill(void)
 			const union v2 p0 = path->vsi[(ev+n-1)%n];
 			const union v2 p1 = path->vsi[ev];
 			const union v2 p2 = path->vsi[(ev+1)%n];
-			union c16 c = rstate.color0;
+			union c16 c = rstate.color[0];
 			rv_tri_c16(p0,c, p1,c, p2,c);
 		}
 
@@ -1720,7 +1625,7 @@ void rv_fill(void)
 		const union v2 p0 = path->vsi[0];
 		const union v2 p1 = path->vsi[1];
 		const union v2 p2 = path->vsi[2];
-		union c16 c = rstate.color0;
+		union c16 c = rstate.color[0];
 		rv_tri_c16(p0,c, p1,c, p2,c);
 	}
 }
@@ -1749,14 +1654,14 @@ void rv_stroke(float width, int close)
 		lane_t[3] = lane_t[2] + side_width;
 
 		lane_c16[0] = lane_c16[3] = (union c16){0};
-		lane_c16[1] = lane_c16[2] = rstate.color0;
+		lane_c16[1] = lane_c16[2] = rstate.color[0];
 	} else {
 		lane_t[0] = -side_width;
 		lane_t[1] = 0.0f;
 		lane_t[2] = -lane_t[0];
 
 		lane_c16[0] = lane_c16[2] = (union c16){0};
-		lane_c16[1] = c16pak(v4_scale(side_width, c16unpak(rstate.color0)));
+		lane_c16[1] = c16pak(v4_scale(side_width, c16unpak(rstate.color[0])));
 	}
 
 	union v2 b0s[4];

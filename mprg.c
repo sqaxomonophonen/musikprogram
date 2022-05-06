@@ -6,12 +6,13 @@
 
 #include "stb_ds.h"
 #include "sokol_time.h"
+
 #include "common.h"
 #include "gpudl.h"
 #include "fps.h"
 #include "pwr.h"
-
 #include "r.h"
+#include "ui.h"
 
 #define MAX_WINDOWS (16)
 
@@ -89,6 +90,7 @@ static void graph_present()
 
 	rv_move_to(400, 200);
 	rv_line_to(600, 200);
+	rv_line_to(410, 210);
 	rv_line_to(600, 400);
 	rv_line_to(400, 400);
 	#else
@@ -107,13 +109,13 @@ static void window_present(struct window* window)
 	const int x1 = w/4;
 	const int h = window->height;
 
-	r_enter_scissor(0, 0, x1, h);
+	Enter(0, 0, x1, h, CLIP);
 	tracker_present();
-	r_leave_scissor();
+	Leave();
 
-	r_enter_scissor(x1, 0, w-x1, h);
+	Enter(x1, 0, w-x1, h, CLIP);
 	graph_present();
-	r_leave_scissor();
+	Leave();
 
 	r_begin(R_MODE_TILE);
 	rcol_plain(v4(0.0, 0.0, 0.0, 1.0));
