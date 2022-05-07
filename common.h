@@ -21,6 +21,8 @@
 #define ASSERT_LINUX assert(!"ASSERT_LINUX failed");
 #endif
 
+static inline float lerp(float t, float a, float b) { return a + t*(b-a); }
+
 union v2 {
 	float s[2];
 	struct { float x,y; };
@@ -52,7 +54,7 @@ static inline union v2 v2_scale(float scalar, union v2 a) { return v2(a.x*scalar
 static inline union v2 v2_unit(union v2 a) { return v2_scale(1.0f / v2_len(a), a); }
 static inline union v2 v2_normal(union v2 a) { return v2(a.y, -a.x); }
 static inline float v2_cross(union v2 a, union v2 b) { return a.x*b.y - a.y*b.x; }
-static inline union v2 v2_lerp(float t, union v2 a, union v2 b) { return v2_add(v2_scale(1.0f-t,a), v2_scale(t,b)); }
+static inline union v2 v2_lerp(float t, union v2 a, union v2 b) { return v2(lerp(t, a.x, b.x), lerp(t, a.y, b.y)); }
 
 static inline union v4 v4_add(union v4 a, union v4 b) { return v4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w); }
 static inline union v4 v4_scale(float scalar, union v4 a) { return v4(a.x*scalar, a.y*scalar, a.z*scalar, a.w*scalar); }
@@ -65,7 +67,7 @@ static inline union v4 pma_alpha(float r, float g, float b, float a) { return (u
 struct rect { float x,y,w,h; };
 
 static inline struct rect rect(float x, float y, float w, float h) { return (struct rect) {.x=x, .y=y, .w=w, .h=h}; }
-static inline void rect_expand(struct rect* rect, float* x0, float* y0, float* x1, float* y1)
+static inline void rect_expand(const struct rect* rect, float* x0, float* y0, float* x1, float* y1)
 {
 	if (x0) *x0 = rect->x;
 	if (y0) *y0 = rect->y;
@@ -85,8 +87,6 @@ static inline float u8tof(uint8_t value)
 {
 	return (float)value * (1.0f / 255.0f);
 }
-
-static inline float lerp(float t, float a, float b) { return a + t*(b-a); }
 
 #define COMMON_H
 #endif

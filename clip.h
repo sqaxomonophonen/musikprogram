@@ -22,8 +22,8 @@ struct clip {
 	int n;
 	struct clip_vertex vs[7];
 };
-void clip_rectangle(struct clip* clip, struct rect* clip_rect, struct rect* input_rect);
-void clip_triangle(struct clip* clip, struct rect* clip_rect, union v2* p0, union v2* p1, union v2* p2);
+void clip_rectangle(struct clip* clip, const struct rect* clip_rect, const struct rect* input_rect);
+void clip_triangle(struct clip* clip, const struct rect* clip_rect, const union v2* p0, const union v2* p1, const union v2* p2);
 
 // only works (properly) for clip_triangle() results
 static inline union v3 clip_get_barycentric_coord(struct clip* clip, int index) {

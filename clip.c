@@ -2,7 +2,7 @@
 
 #include "clip.h"
 
-void clip_rectangle(struct clip* clip, struct rect* clip_rect, struct rect* input_rect)
+void clip_rectangle(struct clip* clip, const struct rect* clip_rect, const struct rect* input_rect)
 {
 	memset(clip, 0, sizeof *clip);
 	float cx0, cy0, cx1, cy1, ix0, iy0, ix1, iy1;
@@ -60,8 +60,8 @@ void clip_rectangle(struct clip* clip, struct rect* clip_rect, struct rect* inpu
 	for (int i1 = 0; i1 < *n; i1++) { \
 		union v2 p0 = vs[i0]; \
 		union v2 p1 = vs[i1]; \
-		const int p0_inside = (ORD-p0.ORD) * n##ORD >= 0.0f; \
-		const int p1_inside = (ORD-p1.ORD) * n##ORD >= 0.0f; \
+		const int p0_inside = (p0.ORD-ORD) * n##ORD >= 0.0f; \
+		const int p1_inside = (p1.ORD-ORD) * n##ORD >= 0.0f; \
 		union v2 cutp = v2_lerp((ORD-p0.ORD) / (p1.ORD-p0.ORD), p0, p1); \
 		if (p1_inside) { \
 			if (!p0_inside) { \
@@ -73,23 +73,25 @@ void clip_rectangle(struct clip* clip, struct rect* clip_rect, struct rect* inpu
 			out[nout++] = cutp; \
 			clipped = 1; \
 		} \
+		assert(nout <= ARRAY_LENGTH(out)); \
+		i0 = i1; \
 	} \
 	*n = nout; \
 	memcpy(vs, out, sizeof(*vs)*nout); \
 	return clipped;
 
-static int vs_xclip(int* n, union v2* vs, float x, float nx)
+static int vs_xclip(int* n, union v2* vs, const float x, const float nx)
 {
 	VS_CLIP_INNER(x)
 }
 
-static int vs_yclip(int* n, union v2* vs, float y, float ny)
+static int vs_yclip(int* n, union v2* vs, const float y, const float ny)
 {
 	VS_CLIP_INNER(y)
 }
 #undef VS_CLIP_INNER
 
-void clip_triangle(struct clip* clip, struct rect* clip_rect, union v2* p0, union v2* p1, union v2* p2)
+void clip_triangle(struct clip* clip, const struct rect* clip_rect, const union v2* p0, const union v2* p1, const union v2* p2)
 {
 	memset(clip, 0, sizeof *clip);
 
@@ -119,6 +121,8 @@ void clip_triangle(struct clip* clip, struct rect* clip_rect, union v2* p0, unio
 			assert(n == 3);
 			clip->result = CLIP_NONE;
 		}
+		clip->n = n;
+
 		for (int i = 0; i < n; i++) {
 			const union v2 p = vs[i];
 			clip->vs[i].xy = p;
