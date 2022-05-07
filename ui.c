@@ -45,8 +45,9 @@ void Enter(int x, int y, int w, int h, int flags)
 	}
 	uistate.n_regions++;
 
+	const struct rect* cr = &uistate.regions[uistate.n_regions-1];
+	r_offset(cr->x, cr->y);
 	if (n == 0 || (flags & CLIP)) {
-		struct rect* cr = &uistate.regions[uistate.n_regions-1];
 		r_clip(cr->x, cr->y, cr->w, cr->h);
 	}
 }
@@ -55,6 +56,12 @@ void Leave()
 {
 	assert((uistate.n_regions > 0) && "no region");
 	uistate.n_regions--;
+
+	if (uistate.n_regions > 0) {
+		const struct rect* cr = &uistate.regions[uistate.n_regions-1];
+		r_offset(cr->x, cr->y);
+	}
+
 	for (int i = uistate.n_regions-1; i >= 0; i--) {
 		if (i == 0 || (uistate.flags[i] & CLIP)) {
 			struct rect* rr = &uistate.regions[i];
