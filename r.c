@@ -575,10 +575,12 @@ static int patch_tile_uvs(int n_quads)
 				h = r->h;
 			}
 
-			pv[0].a_uv = v2(u,   v);
-			pv[1].a_uv = v2(u+w, v);
-			pv[2].a_uv = v2(u+w, v+h);
-			pv[3].a_uv = v2(u,   v+h);
+			for (int i = 0; i < 4; i++) {
+				pv[i].a_uv = v2(
+					lerp(pv[i].a_uv.u, u, u+w),
+					lerp(pv[i].a_uv.v, v, v+h)
+				);
+			}
 		}
 		pv += 4;
 	}
@@ -671,7 +673,7 @@ static void r_flush(int flags)
 		assert(r->mode > 0);
 		assert(!is_end_frame && "not expecting to emit render passes during ''end frame''");
 
-		if (r->mode == R_MODE_TILE) {
+		if (r->mode == R_MODE_TILE || r->mode == R_MODE_TILEPTN) {
 			const int has_previous_tile_pass = (r->n_tile_passes++) > 0;
 
 			const int n_divisor = 4*sizeof(struct tile_vtx);

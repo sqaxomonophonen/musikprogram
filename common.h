@@ -62,18 +62,15 @@ static inline union v4 v4_lerp(float t, union v4 a, union v4 b) { return v4_add(
 static inline union v4 pma_add(float r, float g, float b) { return (union v4) {.r=r, .g=g, .b=b, .a=0}; }
 static inline union v4 pma_alpha(float r, float g, float b, float a) { return (union v4) {.r=r*a, .g=g*a, .b=b*a, .a=a}; }
 
-struct rect {
-	union v2 o;
-	union v2 r;
-};
+struct rect { float x,y,w,h; };
 
-static inline struct rect rect(float x, float y, float w, float h) { return (struct rect) {.o={.x=x,.y=y},.r={.x=w,.y=h}}; }
+static inline struct rect rect(float x, float y, float w, float h) { return (struct rect) {.x=x, .y=y, .w=w, .h=h}; }
 static inline void rect_expand(struct rect* rect, float* x0, float* y0, float* x1, float* y1)
 {
-	if (x0) *x0 = rect->o.x;
-	if (y0) *y0 = rect->o.y;
-	if (x1) *x1 = rect->o.x + rect->r.x;
-	if (y1) *y1 = rect->o.y + rect->r.y;
+	if (x0) *x0 = rect->x;
+	if (y0) *y0 = rect->y;
+	if (x1) *x1 = rect->x + rect->w;
+	if (y1) *y1 = rect->y + rect->h;
 }
 
 static inline uint8_t f2u8(float value)
@@ -88,6 +85,8 @@ static inline float u8tof(uint8_t value)
 {
 	return (float)value * (1.0f / 255.0f);
 }
+
+static inline float lerp(float t, float a, float b) { return a + t*(b-a); }
 
 #define COMMON_H
 #endif

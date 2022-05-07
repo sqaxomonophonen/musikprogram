@@ -12,26 +12,44 @@ void clip_rectangle(struct clip* clip, struct rect* clip_rect, struct rect* inpu
 	if (ix1 <= cx0 || iy1 <= cy0 || cx1 <= ix0 || cy1 <= iy0) {
 		clip->result = CLIP_ALL;
 		clip->n = 0;
-	} else if (ix0 >= cx0 && iy0 >= cy0 && ix1 <= cx1 && iy1 <= cy1) {
+		return;
+	}
+
+	clip->n = 4;
+	float x0, y0, x1, y1, u0, v0, u1, v1;
+
+	if (ix0 >= cx0 && iy0 >= cy0 && ix1 <= cx1 && iy1 <= cy1) {
 		clip->result = CLIP_NONE;
 		clip->n = 4;
-
-		clip->vs[0].xy = v2(ix0, iy0);
-		clip->vs[0].uv = v2(0,0);
-
-		clip->vs[1].xy = v2(ix1, iy0);
-		clip->vs[1].uv = v2(1,0);
-
-		clip->vs[2].xy = v2(ix1, iy1);
-		clip->vs[2].uv = v2(1,1);
-
-		clip->vs[3].xy = v2(ix0, iy1);
-		clip->vs[3].uv = v2(0,1);
+		x0 = ix0; y0 = iy0;
+		x1 = ix1; y1 = iy1;
+		u0 = 0; v0 = 0;
+		u1 = 1; v1 = 1;
 	} else {
 		clip->result = CLIP_SOME;
-		clip->n = 4;
-		assert(!"TODO");
+		const float ddx = 1.0f / (ix1-ix0);
+		const float ddy = 1.0f / (iy1-iy0);
+		x0 = cx0 > ix0 ? cx0 : ix0;
+		y0 = cy0 > iy0 ? cy0 : iy0;
+		x1 = cx1 < ix1 ? cx1 : ix1;
+		y1 = cy1 < iy1 ? cy1 : iy1;
+		u0 = cx0 > ix0 ? (cx0-ix0)*ddx : 0.0f;
+		v0 = cy0 > iy0 ? (cy0-iy0)*ddy : 0.0f;
+		u1 = cx1 < ix1 ? (cx1-ix0)*ddx : 1.0f;
+		v1 = cy1 < iy1 ? (cy1-iy0)*ddy : 1.0f;
 	}
+
+	clip->vs[0].xy = v2(x0, y0);
+	clip->vs[0].uv = v2(u0, v0);
+
+	clip->vs[1].xy = v2(x1, y0);
+	clip->vs[1].uv = v2(u1, v0);
+
+	clip->vs[2].xy = v2(x1, y1);
+	clip->vs[2].uv = v2(u1, v1);
+
+	clip->vs[3].xy = v2(x0, y1);
+	clip->vs[3].uv = v2(u0 ,v1);
 }
 
 #define VS_CLIP_INNER(ORD) \
