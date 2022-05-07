@@ -898,21 +898,6 @@ void r_begin_ptn_frame(int pattern)
 		wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
 	}
 
-	{
-		// XXX TODO ... get transform from where?
-		const float sx = 1.0f / (float)p->width;
-		const float sy = 1.0f / (float)p->height;
-		struct pattern_uni u = {
-			.x0 = 0,
-			.y0 = 0,
-			.bxx = sx,
-			.bxy = 0,
-			.byx = 0,
-			.byy = sy,
-		};
-		wgpuQueueWriteBuffer(r->queue, r->pattern_unibuf, 0, &u, sizeof u);
-	}
-
 	r->begun_frame = 1;
 	r->is_pattern_frame = 1;
 }
@@ -1082,7 +1067,20 @@ void rptn_set(int pattern)
 {
 	struct r* r = &rstate;
 	assert(r->mode == 0);
-	r->current_pattern_bind_group = get_pattern(pattern)->bind_group;
+	struct pattern* p = get_pattern(pattern);
+	r->current_pattern_bind_group = p->bind_group;
+	// XXX TODO ... get transform from where?
+	const float sx = 1.0f / (float)p->width;
+	const float sy = 1.0f / (float)p->height;
+	struct pattern_uni u = {
+		.x0 = (float)r->offset_x0 * -sx,
+		.y0 = (float)r->offset_y0 * -sy,
+		.bxx = sx,
+		.bxy = 0,
+		.byx = 0,
+		.byy = sy,
+	};
+	wgpuQueueWriteBuffer(r->queue, r->pattern_unibuf, 0, &u, sizeof u);
 }
 
 void rcol_lgrad(union v4 color0, union v4 color1, union v2 basis)
