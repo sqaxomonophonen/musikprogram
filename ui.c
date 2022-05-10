@@ -12,7 +12,7 @@ struct uistate {
 	int flags[MAX_REGION_STACK_SIZE];
 } uistate;
 
-void Region(int* x, int* y, int* w, int* h)
+void ui_region(int* x, int* y, int* w, int* h)
 {
 	assert((uistate.n_regions > 0) && "no region");
 	struct rect* cr = &uistate.regions[uistate.n_regions - 1];
@@ -22,7 +22,7 @@ void Region(int* x, int* y, int* w, int* h)
 	if (h) *h = cr->h;
 }
 
-void Enter(int x, int y, int w, int h, int flags)
+void ui_enter(int x, int y, int w, int h, int flags)
 {
 	const int n = uistate.n_regions;
 	assert(n >= 0);
@@ -52,7 +52,7 @@ void Enter(int x, int y, int w, int h, int flags)
 	}
 }
 
-void Leave()
+void ui_leave()
 {
 	assert((uistate.n_regions > 0) && "no region");
 	uistate.n_regions--;

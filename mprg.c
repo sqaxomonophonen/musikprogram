@@ -109,15 +109,15 @@ static void window_present(struct window* window)
 	const int h = window->height;
 	const int x1 = w/4;
 
-	Enter(0,0,w,h,CLIP);
+	ui_enter(0,0,w,h,CLIP);
 
-	Enter(0, 0, x1, h, CLIP);
+	ui_enter(0, 0, x1, h, CLIP);
 	tracker_present();
-	Leave();
+	ui_leave();
 
-	Enter(x1, 0, w-x1, h, CLIP);
+	ui_enter(x1, 0, w-x1, h, CLIP);
 	graph_present();
-	Leave();
+	ui_leave();
 
 	#if 1
 	r_begin(R_MODE_TILE);
@@ -126,7 +126,7 @@ static void window_present(struct window* window)
 	r_end();
 	#endif
 
-	Leave();
+	ui_leave();
 
 	#if 0
 	r_begin(R_MODE_TILE);
@@ -253,7 +253,7 @@ int main(int argc, char** argv)
 
 		if ((iteration & 0) == 0) {
 			r_begin_ptn_frame(ptn0);
-			Enter(0, 0, ptn0_sz, ptn0_sz, CLIP);
+			ui_enter(0, 0, ptn0_sz, ptn0_sz, CLIP);
 			r_begin(R_MODE_TILE);
 			rcol_plain(v4(0.0, 0.0, 0.0, 1.0));
 			rt_clear();
@@ -295,7 +295,7 @@ int main(int argc, char** argv)
 			//rcol_plain(v4(1.0, 0.0, 1.0, 1.0));
 			//rt_quad(0, 0, iteration % 128, (iteration*2) % 128);
 			r_end();
-			Leave();
+			ui_leave();
 			r_end_ptn_frame();
 		}
 
