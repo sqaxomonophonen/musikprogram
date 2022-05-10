@@ -128,39 +128,12 @@ static void window_present(struct window* window)
 
 	ui_leave();
 
-	#if 0
 	r_begin(R_MODE_TILE);
-
-	rcol_plain(v4(1.0, 1.2, 1.0, 1.0));
-	r_enter(50, 50, 200, 100);
-	rt_clear();
-	r_leave();
-
 	rcol_plain(v4(0.0, 1.2, 0.0, 1.0));
-	r_enter(0, 0, 190, 290);
+	ui_enter(0, 0, w, h, CLIP);
 	rt_3x3(T3x3(box), 100, 100, 100, 200);
-	r_leave();
-
-	rcol_xgrad(
-		v4(0.0, 0.2, 0.0, 1.0),
-		v4(0.7, 1.2, 0.0, 1.0)
-	);
-	rt_quad(500, 100, 30, 500);
-
+	ui_leave();
 	r_end();
-
-	rcol_plain(v4(1.0, 1.2, 1.7, 1.0));
-	r_begin(R_MODE_VECTOR);
-	rv_line_width(1.8);
-	rv_move_to(0,0);
-	rv_bezier_to(
-		window->width, 0,
-		0, window->height,
-		window->width, window->height);
-	//rv_line_to(window->width, window->height);
-	rv_end_path();
-	r_end();
-	#endif
 }
 
 int main(int argc, char** argv)
