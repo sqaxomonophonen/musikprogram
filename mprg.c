@@ -23,6 +23,7 @@ struct window {
 	int width;
 	int height;
 	struct postproc_window ppw;
+	struct ui_window uw;
 };
 
 struct mprg {
@@ -105,6 +106,8 @@ static void graph_present()
 
 static void window_present(struct window* window)
 {
+	ui_begin(&window->uw);
+
 	const int w = window->width;
 	const int h = window->height;
 	const int x1 = w/4;
@@ -134,6 +137,8 @@ static void window_present(struct window* window)
 	rt_3x3(T3x3(box), 100, 100, 100, 200);
 	ui_leave();
 	r_end();
+
+	ui_end();
 }
 
 int main(int argc, char** argv)
@@ -188,6 +193,8 @@ int main(int argc, char** argv)
 			}
 			int do_close = 0;
 
+			struct ui_window* uw = w ? &w->uw : NULL;
+
 			switch (e.type) {
 			case GPUDL_CLOSE:
 				do_close = 1;
@@ -204,6 +211,23 @@ int main(int argc, char** argv)
 						}
 					}
 
+				}
+				break;
+			case GPUDL_MOTION:
+				if (uw) {
+					uw->mpos.x = e.motion.x;
+					uw->mpos.y = e.motion.y;
+				}
+				break;
+			case GPUDL_BUTTON:
+				if (uw) {
+					assert(0 <= e.button.which && e.button.which < GPUDL_BUTTON_END);
+					struct ui_mbtn* bt = &uw->mbtn[e.button.which];
+					const int p = e.button.pressed;
+					bt->down = p;
+					if (p) bt->clicked++;
+					bt->mpos.x = e.button.x;
+					bt->mpos.y = e.button.y;
 				}
 				break;
 			default:
