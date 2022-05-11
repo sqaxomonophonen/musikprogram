@@ -22,6 +22,7 @@ struct ui_window {
 void ui_begin(struct ui_window* uw);
 void ui_end();
 void ui_region(int* x, int* y, int* w, int* h);
+void ui_pan(int dx, int dy);
 static inline void ui_dimensions(int* w, int* h) { ui_region(NULL, NULL, w, h); }
 void ui_enter(int x, int y, int w, int h, int flags);
 void ui_leave();

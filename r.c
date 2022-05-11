@@ -1341,7 +1341,7 @@ void rt_quad(float x, float y, float w, float h)
 void rt_clear(void)
 {
 	struct r* r = &rstate;
-	rt_quad(0, 0, r->width, r->height);
+	rt_quad(-r->offset_x0, -r->offset_y0, r->width, r->height);
 }
 
 void rv_tri_c16(union v2 p0, union c16 c0, union v2 p1, union c16 c1, union v2 p2, union c16 c2)

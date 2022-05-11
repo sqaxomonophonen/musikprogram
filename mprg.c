@@ -102,7 +102,9 @@ static void graph_present(struct window* window)
 		}
 	}
 
-	rptn_set(ptn0, g->x, g->y);
+	ui_pan(g->x, g->y);
+
+	rptn_set(ptn0, 0, 0);
 	r_begin(R_MODE_TILEPTN);
 	rcol_plain(v4(1.0, 1.0, 1.0, 1.0));
 	rt_clear();
@@ -110,7 +112,7 @@ static void graph_present(struct window* window)
 
 	r_begin(R_MODE_TILE);
 	rcol_plain(v4(0.1, 0.15, 0.1, 0.9));
-	rt_quad(g->x, g->y, 128, 64);
+	rt_quad(0, 0, 128, 64);
 	r_end();
 }
 

@@ -55,6 +55,12 @@ void ui_region(int* x, int* y, int* w, int* h)
 	if (h) *h = cr->h;
 }
 
+void ui_pan(int dx, int dy)
+{
+	const struct rect* cr = get_region();
+	r_offset(cr->x + dx, cr->y + dy);
+}
+
 void ui_enter(int x, int y, int w, int h, int flags)
 {
 	struct uistate* u = &uistate;
@@ -79,9 +85,9 @@ void ui_enter(int x, int y, int w, int h, int flags)
 	}
 	u->n_regions++;
 
-	const struct rect* cr = &u->regions[u->n_regions-1];
-	r_offset(cr->x, cr->y);
+	ui_pan(0,0);
 	if (n == 0 || (flags & CLIP)) {
+		const struct rect* cr = get_region();
 		r_clip(cr->x, cr->y, cr->w, cr->h);
 	}
 }
@@ -93,8 +99,7 @@ void ui_leave()
 	u->n_regions--;
 
 	if (u->n_regions > 0) {
-		const struct rect* cr = &u->regions[u->n_regions-1];
-		r_offset(cr->x, cr->y);
+		ui_pan(0,0);
 	}
 
 	for (int i = u->n_regions-1; i >= 0; i--) {
