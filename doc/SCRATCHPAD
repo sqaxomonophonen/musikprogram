@@ -1,0 +1,25 @@
+
+Graph editor actions (TODO):
+
+ - [Pan] - RMB+drag
+ - [Go to parent]
+ - [Insert node]
+    - insert from standard library...
+    - insert from local library...
+    - insert from shortcuts...
+    - text search...
+ - [Delete node]
+ - [Move node]
+ - [Create connection between two node ports]
+ - [Delete connection]
+ - [Duplicate node]
+ - [Edit internal/external node appearance] (internal is background pattern;
+   external is node shape, colors, and maybe custom icon)
+ - [Edit node properties] (not all nodes have properties, but some do: a
+   sampler needs a PCM resource; a FIR resampler needs parameters to construct
+   a FIR table; size, window function, window parameters, etc ... some
+   parameter-like things might be handled with constant inputs, e.g. resampling
+   factor, but making e.g. a PCM resource a constant input only moves the
+   "property editor" problem elsewhere)
+ - 
+
