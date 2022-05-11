@@ -267,7 +267,6 @@ static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
 static WGPUTextureView postproc_begin_frame(struct postproc_window* ppw, int width, int height, WGPUTextureView swap_chain_texture_view)
 {
 	struct postproc* pp = &rstate.postproc;
-	//struct postproc_window* ppw = &window->ppw;
 	ppw->swap_chain_texture_view = swap_chain_texture_view;
 	rstate.current_ppw = ppw;
 
@@ -1049,18 +1048,17 @@ void rptn_free(int pattern)
 	wgpuTextureDrop(p->texture);
 }
 
-void rptn_set(int pattern)
+void rptn_set(int pattern, int dx, int dy)
 {
 	struct r* r = &rstate;
 	assert(r->mode == 0);
 	struct pattern* p = get_pattern(pattern);
 	r->current_pattern_bind_group = p->bind_group;
-	// XXX TODO ... get transform from where?
 	const float sx = 1.0f / (float)p->width;
 	const float sy = 1.0f / (float)p->height;
 	struct pattern_uni u = {
-		.x0 = (float)r->offset_x0 * -sx,
-		.y0 = (float)r->offset_y0 * -sy,
+		.x0 = (float)(dx + r->offset_x0) * -sx,
+		.y0 = (float)(dy + r->offset_y0) * -sy,
 		.bxx = sx,
 		.bxy = 0,
 		.byx = 0,

@@ -67,6 +67,8 @@ static inline union v4 pma_alpha(float r, float g, float b, float a) { return (u
 struct rect { float x,y,w,h; };
 
 static inline struct rect rect(float x, float y, float w, float h) { return (struct rect) {.x=x, .y=y, .w=w, .h=h}; }
+static inline union v2 rect_origin(const struct rect* rect) { return v2(rect->x, rect->y); }
+
 static inline void rect_expand(const struct rect* rect, float* x0, float* y0, float* x1, float* y1)
 {
 	if (x0) *x0 = rect->x;
@@ -74,6 +76,16 @@ static inline void rect_expand(const struct rect* rect, float* x0, float* y0, fl
 	if (x1) *x1 = rect->x + rect->w;
 	if (y1) *y1 = rect->y + rect->h;
 }
+
+static inline int rect_contains(const struct rect* rect, union v2* p)
+{
+	float x = p->x;
+	float y = p->y;
+	float x0,y0,x1,y1;
+	rect_expand(rect, &x0, &y0, &x1, &y1);
+	return x0<=x && x<x1 && y0<=y && y<y1;
+}
+
 
 static inline uint8_t f2u8(float value)
 {

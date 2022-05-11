@@ -20,24 +20,35 @@ void ui_begin(struct ui_window* uw)
 	u->uw = uw;
 }
 
-void ui_end()
+static struct ui_window* get_uw()
 {
 	struct uistate* u = &uistate;
 	struct ui_window* uw = u->uw;
 	assert((uw != NULL) && "not inside ui_begin()");
+	return uw;
+}
 
+void ui_end()
+{
+	struct uistate* u = &uistate;
+	assert((u->n_regions == 0) && "ui_end() inside ui_enter()");
+	struct ui_window* uw = get_uw();
 	for (int i = 0; i < GPUDL_BUTTON_END; i++) {
 		uw->mbtn[i].clicked = 0;
 	}
-
 	u->uw = NULL;
+}
+
+static struct rect* get_region()
+{
+	struct uistate* u = &uistate;
+	assert((u->n_regions > 0) && "no region");
+	return &u->regions[u->n_regions - 1];
 }
 
 void ui_region(int* x, int* y, int* w, int* h)
 {
-	struct uistate* u = &uistate;
-	assert((u->n_regions > 0) && "no region");
-	struct rect* cr = &u->regions[u->n_regions - 1];
+	struct rect* cr = get_region();
 	if (x) *x = cr->x;
 	if (y) *y = cr->y;
 	if (w) *w = cr->w;
@@ -93,6 +104,27 @@ void ui_leave()
 			break;
 		}
 	}
+}
+
+union v2 ui_mpos()
+{
+	return v2_sub(get_uw()->mpos, rect_origin(get_region()));
+}
+
+int ui_clicked(enum gpudl_button button)
+{
+	struct rect* cr = get_region();
+	struct ui_window* uw = get_uw();
+	struct ui_mbtn* mb = &uw->mbtn[button];
+	return mb->clicked && rect_contains(cr, &mb->mpos);
+}
+
+int ui_down(enum gpudl_button button)
+{
+	struct rect* cr = get_region();
+	struct ui_window* uw = get_uw();
+	struct ui_mbtn* mb = &uw->mbtn[button];
+	return mb->down && rect_contains(cr, &mb->mpos);
 }
 
 #if 0

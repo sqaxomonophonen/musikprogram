@@ -18,12 +18,21 @@
 
 int ptn0;
 
+struct window_graph {
+	int id;
+	int x;
+	int y;
+	int is_panning;
+	union v2 pan_anchor;
+};
+
 struct window {
 	int id;
 	int width;
 	int height;
 	struct postproc_window ppw;
 	struct ui_window uw;
+	struct window_graph graph;
 };
 
 struct mprg {
@@ -50,7 +59,7 @@ static void wgpu_native_log_callback(WGPULogLevel level, const char* msg)
 	printf("WGPU NATIVE [%s] :: %s\n", lvl, msg);
 }
 
-static void tracker_present()
+static void tracker_present(struct window* window)
 {
 	r_begin(R_MODE_TILE);
 	rcol_ygrad(
@@ -75,33 +84,38 @@ static void tracker_present()
 	r_end();
 }
 
-static void graph_present()
+static void graph_present(struct window* window)
 {
-	rptn_set(ptn0);
+	struct window_graph* g = &window->graph;
+
+	if (ui_clicked(GPUDL_BUTTON_RIGHT)) {
+		g->is_panning = 1;
+		g->pan_anchor = v2_sub(ui_mpos(), v2(g->x, g->y));
+	}
+
+	if (g->is_panning) {
+		union v2 p = v2_sub(ui_mpos(), g->pan_anchor);
+		g->x = p.x;
+		g->y = p.y;
+		if (!ui_down(GPUDL_BUTTON_RIGHT)) {
+			g->is_panning = 0;
+		}
+	}
+
+	rptn_set(ptn0, g->x, g->y);
 	r_begin(R_MODE_TILEPTN);
 	rcol_plain(v4(1.0, 1.0, 1.0, 1.0));
 	rt_clear();
 	r_end();
 
-	r_begin(R_MODE_VECTOR);
-	rcol_plain(v4(1.0, 1.0, 1.0, 1.0));
-	#if 1
-
-	//rv_quad(400,200,200,200);
-
-	rv_move_to(400, 200);
-	rv_line_to(600, 200);
-	rv_line_to(410, 210);
-	rv_line_to(600, 400);
-	rv_line_to(400, 400);
-	#else
-	rv_move_to(400, 200);
-	rv_line_to(400, 400);
-	rv_line_to(600, 400);
-	rv_line_to(600, 200);
-	#endif
-	rv_fill();
+	r_begin(R_MODE_TILE);
+	rcol_plain(v4(0.1, 0.15, 0.1, 0.9));
+	rt_quad(g->x, g->y, 128, 64);
 	r_end();
+}
+
+static void overlay_present(struct window* window)
+{
 }
 
 static void window_present(struct window* window)
@@ -110,33 +124,23 @@ static void window_present(struct window* window)
 
 	const int w = window->width;
 	const int h = window->height;
-	const int x1 = w/4;
+	const int x1 = w/6; // XXX TODO layouting
 
 	ui_enter(0,0,w,h,CLIP);
 
 	ui_enter(0, 0, x1, h, CLIP);
-	tracker_present();
+	tracker_present(window);
 	ui_leave();
 
 	ui_enter(x1, 0, w-x1, h, CLIP);
-	graph_present();
+	graph_present(window);
 	ui_leave();
 
-	#if 1
-	r_begin(R_MODE_TILE);
-	rcol_plain(v4(0.0, 0.0, 0.0, 1.0));
-	rt_quad(x1-2, 0, 4, h);
-	r_end();
-	#endif
-
+	ui_enter(0,0,w,h,CLIP);
+	overlay_present(window);
 	ui_leave();
 
-	r_begin(R_MODE_TILE);
-	rcol_plain(v4(0.0, 1.2, 0.0, 1.0));
-	ui_enter(0, 0, w, h, CLIP);
-	rt_3x3(T3x3(box), 100, 100, 100, 200);
 	ui_leave();
-	r_end();
 
 	ui_end();
 }
@@ -181,6 +185,7 @@ int main(int argc, char** argv)
 		while (gpudl_poll_event(&e)) {
 			struct window* w = NULL;
 			int widx = -1;
+			struct ui_window* uw = NULL;
 
 			// find event window
 			for (int i = 0; i < mprg.n_windows; i++) {
@@ -188,12 +193,11 @@ int main(int argc, char** argv)
 				if (ww->id == e.window_id) {
 					w = ww;
 					widx = i;
+					uw = &ww->uw;
 					break;
 				}
 			}
 			int do_close = 0;
-
-			struct ui_window* uw = w ? &w->uw : NULL;
 
 			switch (e.type) {
 			case GPUDL_CLOSE:
@@ -226,8 +230,8 @@ int main(int argc, char** argv)
 					const int p = e.button.pressed;
 					bt->down = p;
 					if (p) bt->clicked++;
-					bt->mpos.x = e.button.x;
-					bt->mpos.y = e.button.y;
+					bt->mpos.x = e.button.x; // XXX or only if p?
+					bt->mpos.y = e.button.y; // XXX or only if p?
 				}
 				break;
 			default:

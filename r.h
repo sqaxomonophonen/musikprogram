@@ -93,7 +93,7 @@ void r_end(void);
 
 int rptn_new(int width, int height);
 void rptn_free(int pattern);
-void rptn_set(int pattern);
+void rptn_set(int pattern, int dx, int dy);
 
 void rcol_plain(union v4 color);
 void rcol_lgrad(union v4 color0, union v4 color1, union v2 basis);

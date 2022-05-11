@@ -26,5 +26,9 @@ static inline void ui_dimensions(int* w, int* h) { ui_region(NULL, NULL, w, h); 
 void ui_enter(int x, int y, int w, int h, int flags);
 void ui_leave();
 
+union v2 ui_mpos();
+int ui_clicked(enum gpudl_button button);
+int ui_down(enum gpudl_button button);
+
 #define UI_H
 #endif
