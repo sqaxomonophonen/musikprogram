@@ -264,10 +264,8 @@ static WGPUShaderModule mk_shader_module(WGPUDevice device, const char* src)
 	return shader;
 }
 
-static WGPUTextureView postproc_begin_frame(struct postproc_window* ppw, WGPUTextureView swap_chain_texture_view)
+static WGPUTextureView postproc_begin_frame(struct postproc_window* ppw, int width, int height, WGPUTextureView swap_chain_texture_view)
 {
-	const int width = rstate.width;
-	const int height = rstate.height;
 	struct postproc* pp = &rstate.postproc;
 	//struct postproc_window* ppw = &window->ppw;
 	ppw->swap_chain_texture_view = swap_chain_texture_view;
@@ -816,49 +814,63 @@ void r_end_frames(void)
 	r->seed = fmodf(r->seed + 0.1f, 11.11f);
 }
 
-void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextureView swap_chain_texture_view)
+static void begin_frame(int width, int height, WGPUTextureView target, float draw_scalar)
 {
 	struct r* r = &rstate;
 
-	r->width = width;
-	r->height = height;
-
 	assert((r->begun_frames) && "not inside r_begin_frames()");
 	assert((!r->begun_frame) && "frame already begun");
+
+	r->width = width;
+	r->height = height;
 
 	assert(r->vtxbuf_cursor == 0);
 
 	r->n_passes = 0;
 	r->n_tile_passes = 0;
 	assert(r->n_static_quad_indices == 0);
-	r->render_target_texture_view = postproc_begin_frame(ppw, swap_chain_texture_view);
-
-	enum postproc_type t = r->postproc.type;
-	const float scalar =
-		t == PP_NONE ? MAX_INTENSITY :
-		t == PP_GAUSS ? 1.0f :
-		0.0f;
+	r->render_target_texture_view = target;
 
 	struct draw_uni u = {
 		.width = width,
 		.height = height,
 		.seed = r->seed,
-		.scalar = scalar,
+		.scalar = draw_scalar,
 	};
 	wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
 
 	r->begun_frame = 1;
-	r->is_pattern_frame = 0;
+}
+
+static void end_frame(void)
+{
+	struct r* r = &rstate;
+	assert((r->begun_frame) && "not inside frame");
+	assert((r->mode == 0) && "mode not r_end()'d");
+	r_flush(FF_END_FRAME);
+	r->begun_frame = 0;
+	r->width = 0;
+	r->height = 0;
+}
+
+void r_begin_frame(int width, int height, struct postproc_window* ppw, WGPUTextureView swap_chain_texture_view)
+{
+	const enum postproc_type t = rstate.postproc.type;
+	const float scalar =
+		t == PP_NONE ? MAX_INTENSITY :
+		t == PP_GAUSS ? 1.0f :
+		0.0f;
+	begin_frame(
+		width, height,
+		postproc_begin_frame(ppw, width, height, swap_chain_texture_view),
+		scalar);
+	rstate.is_pattern_frame = 0;
 }
 
 void r_end_frame(void)
 {
-	struct r* r = &rstate;
-	assert((r->begun_frame) && "not inside r_begin_frame()");
-	assert((r->mode == 0) && "mode not r_end()'d");
-	assert(!r->is_pattern_frame);
-	r_flush(FF_END_FRAME);
-	r->begun_frame = 0;
+	assert(!rstate.is_pattern_frame);
+	end_frame();
 }
 
 static struct pattern* get_pattern(int pattern)
@@ -873,43 +885,17 @@ static struct pattern* get_pattern(int pattern)
 void r_begin_ptn_frame(int pattern)
 {
 	struct pattern* p = get_pattern(pattern);
-	struct r* r = &rstate;
-
-	assert((r->begun_frames) && "not inside r_begin_frames()");
-	assert((!r->begun_frame) && "frame already begun");
-
-	r->width = p->width;
-	r->height = p->height;
-
-	assert(r->vtxbuf_cursor == 0);
-
-	r->n_passes = 0;
-	r->n_tile_passes = 0;
-	assert(r->n_static_quad_indices == 0);
-	r->render_target_texture_view = p->texture_view;
-
-	{
-		struct draw_uni u = {
-			.width = p->width,
-			.height = p->height,
-			.seed = r->seed,
-			.scalar = 1.0,
-		};
-		wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
-	}
-
-	r->begun_frame = 1;
-	r->is_pattern_frame = 1;
+	begin_frame(
+		p->width, p->height,
+		p->texture_view,
+		1.0f);
+	rstate.is_pattern_frame = 1;
 }
 
 void r_end_ptn_frame(void)
 {
-	struct r* r = &rstate;
-	assert((r->begun_frame) && "not inside r_begin_frame()");
-	assert((r->mode == 0) && "mode not r_end()'d");
-	assert(r->is_pattern_frame);
-	r_flush(FF_END_FRAME);
-	r->begun_frame = 0;
+	assert(rstate.is_pattern_frame);
+	end_frame();
 }
 
 void r_begin(int mode)
