@@ -1056,9 +1056,13 @@ void rptn_set(int pattern, int dx, int dy)
 	r->current_pattern_bind_group = p->bind_group;
 	const float sx = 1.0f / (float)p->width;
 	const float sy = 1.0f / (float)p->height;
+	// XXX ideally x0/y0 would be in the range [0;1], but the MOD causes
+	// the range to be [-1;1] (-1%10 gives -1 and not 9 like I'd mostly
+	// prefer). it works out because I'm only MOD'ing to preserve floating
+	// point precision
 	struct pattern_uni u = {
-		.x0 = (float)(dx + r->offset_x0) * -sx,
-		.y0 = (float)(dy + r->offset_y0) * -sy,
+		.x0 = (float)((dx + r->offset_x0) % p->width)  * -sx,
+		.y0 = (float)((dy + r->offset_y0) % p->height) * -sy,
 		.bxx = sx,
 		.bxy = 0,
 		.byx = 0,
