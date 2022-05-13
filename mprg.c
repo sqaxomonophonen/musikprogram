@@ -124,6 +124,14 @@ static void window_present(struct window* window)
 {
 	ui_begin(&window->uw);
 
+	if (ui_keyseq2(GK_LSHIFT, '/')) {
+		printf("MENU LEFT\n");
+	} else if (ui_keyseq2(GK_RSHIFT, '/')) {
+		printf("MENU RIGHT\n");
+	} else if (ui_key('/')) {
+		printf("MENU\n");
+	}
+
 	const int w = window->width;
 	const int h = window->height;
 	const int x1 = w/6; // XXX TODO layouting
@@ -216,8 +224,8 @@ int main(int argc, char** argv)
 							r_set_postproc_type(PP_GAUSS);
 						}
 					}
-
 				}
+				ui_window_key_event(uw, e.key.code, e.key.pressed);
 				break;
 			case GPUDL_MOTION:
 				if (uw) {

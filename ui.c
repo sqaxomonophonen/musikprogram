@@ -33,9 +33,8 @@ void ui_end()
 	struct uistate* u = &uistate;
 	assert((u->n_regions == 0) && "ui_end() inside ui_enter()");
 	struct ui_window* uw = get_uw();
-	for (int i = 0; i < GPUDL_BUTTON_END; i++) {
-		uw->mbtn[i].clicked = 0;
-	}
+	for (int i = 0; i < GPUDL_BUTTON_END; i++) uw->mbtn[i].clicked = 0;
+	for (int i = 0; i < GK_SPECIAL_END; i++) uw->key[i].pressed = 0;
 	u->uw = NULL;
 }
 
@@ -109,6 +108,42 @@ void ui_leave()
 			break;
 		}
 	}
+}
+
+int ui_keyseq(struct ui_keyseq* keyseq)
+{
+	assert(keyseq->n > 0);
+	struct ui_window* uw = get_uw();
+	int last_serial = 0;
+	for (int i = 0; i < keyseq->n; i++) {
+		const int code = keyseq->code[i];
+		assert(0 <= code && code < GK_SPECIAL_END);
+		struct ui_key* key = &uw->key[code];
+		if (key->down_serial <= last_serial) return 0;
+		last_serial = key->down_serial;
+		if (i == keyseq->n-1 && !key->pressed) return 0;
+	}
+	return 1;
+}
+
+int ui_key(int code)
+{
+	return ui_keyseq(&(struct ui_keyseq) { .n=1, .code={ code } });
+}
+
+int ui_keyseq2(int code0, int code1)
+{
+	return ui_keyseq(&(struct ui_keyseq) { .n=2, .code={ code0, code1 } });
+}
+
+int ui_keyseq3(int code0, int code1, int code2)
+{
+	return ui_keyseq(&(struct ui_keyseq) { .n=3, .code={ code0, code1, code2 } });
+}
+
+int ui_keyseq4(int code0, int code1, int code2, int code3)
+{
+	return ui_keyseq(&(struct ui_keyseq) { .n=4, .code={ code0, code1, code2, code3 } });
 }
 
 union v2 ui_mpos()
