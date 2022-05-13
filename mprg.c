@@ -124,6 +124,12 @@ static void window_present(struct window* window)
 {
 	ui_begin(&window->uw);
 
+	const int w = window->width;
+	const int h = window->height;
+	const int x1 = w/6; // XXX TODO layouting
+
+	ui_enter(0,0,w,h,CLIP);
+
 	if (ui_keyseq2(GK_LSHIFT, '/')) {
 		printf("MENU LEFT\n");
 	} else if (ui_keyseq2(GK_RSHIFT, '/')) {
@@ -131,12 +137,6 @@ static void window_present(struct window* window)
 	} else if (ui_key('/')) {
 		printf("MENU\n");
 	}
-
-	const int w = window->width;
-	const int h = window->height;
-	const int x1 = w/6; // XXX TODO layouting
-
-	ui_enter(0,0,w,h,CLIP);
 
 	ui_enter(0, 0, x1, h, CLIP);
 	tracker_present(window);

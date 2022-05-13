@@ -45,6 +45,13 @@ static struct rect* get_region()
 	return &u->regions[u->n_regions - 1];
 }
 
+static int get_flags()
+{
+	struct uistate* u = &uistate;
+	assert((u->n_regions > 0) && "no region");
+	return u->flags[u->n_regions - 1];
+}
+
 void ui_region(int* x, int* y, int* w, int* h)
 {
 	struct rect* cr = get_region();
@@ -112,7 +119,10 @@ void ui_leave()
 
 static int has_keyboard_focus()
 {
-	return 1; // XXX TODO
+	const int flags = get_flags();
+	if (flags & NO_INPUT) return 0;
+	// TODO proper focus?
+	return 1;
 }
 
 int ui_keyseq(struct ui_keyseq* keyseq)
