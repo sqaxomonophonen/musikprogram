@@ -18,6 +18,7 @@ void ui_begin(struct ui_window* uw)
 	struct uistate* u = &uistate;
 	assert((u->uw == NULL) && "already inside ui_begin()");
 	u->uw = uw;
+	uw->codepoint_cursor = 0;
 }
 
 static struct ui_window* get_uw()
@@ -35,6 +36,7 @@ void ui_end()
 	struct ui_window* uw = get_uw();
 	for (int i = 0; i < GPUDL_BUTTON_END; i++) uw->mbtn[i].clicked = 0;
 	for (int i = 0; i < GK_SPECIAL_END; i++) uw->key[i].pressed = 0;
+	uw->n_codepoints = 0;
 	u->uw = NULL;
 }
 
@@ -160,6 +162,16 @@ int ui_keyseq3(int code0, int code1, int code2)
 int ui_keyseq4(int code0, int code1, int code2, int code3)
 {
 	return ui_keyseq(&(struct ui_keyseq) { .n=4, .code={ code0,code1,code2,code3 } });
+}
+
+int ui_read()
+{
+	if (!has_keyboard_focus()) return 0;
+	struct ui_window* uw = get_uw();
+	if (0 <= uw->codepoint_cursor && uw->codepoint_cursor < uw->n_codepoints) {
+		return uw->codepoints[uw->codepoint_cursor++];
+	}
+	return 0;
 }
 
 union v2 ui_mpos()

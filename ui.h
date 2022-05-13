@@ -19,11 +19,16 @@ struct ui_key {
 	int down_serial;
 };
 
+#define UI_CODEPOINTS_MAX (32)
+
 struct ui_window {
 	union v2 mpos;
 	struct ui_mbtn mbtn[GPUDL_BUTTON_END];
 	struct ui_key key[GK_SPECIAL_END];
 	int serial;
+	int n_codepoints;
+	int codepoints[UI_CODEPOINTS_MAX];
+	int codepoint_cursor;
 };
 
 #define UI_KEYSEQ_MAX (4)
@@ -42,6 +47,14 @@ static inline void ui_window_key_event(struct ui_window* uw, enum gpudl_keycode 
 		key->down_serial = (++uw->serial);
 	} else {
 		key->down_serial = 0;
+	}
+}
+
+static inline void ui_window_codepoint(struct ui_window* uw, int codepoint)
+{
+	if (!uw) return;
+	if (0 <= uw->n_codepoints && uw->n_codepoints < UI_CODEPOINTS_MAX) {
+		uw->codepoints[uw->n_codepoints++] = codepoint;
 	}
 }
 

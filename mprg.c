@@ -136,7 +136,11 @@ static void window_present(struct window* window)
 		printf("MENU RIGHT\n");
 	} else if (ui_key('/')) {
 		printf("MENU\n");
+	} else {
+		int c;
+		while ((c = ui_read()) != 0) printf("key %d/%c\n", c, c);
 	}
+
 
 	ui_enter(0, 0, x1, h, CLIP);
 	tracker_present(window);
@@ -226,9 +230,7 @@ int main(int argc, char** argv)
 					}
 				}
 				ui_window_key_event(uw, e.key.code, e.key.pressed);
-				if (e.key.codepoint > 0) {
-					printf("key %c\n", e.key.codepoint);
-				}
+				if (e.key.codepoint > 0) ui_window_codepoint(uw, e.key.codepoint);
 				break;
 			case GPUDL_MOTION:
 				if (uw) {
