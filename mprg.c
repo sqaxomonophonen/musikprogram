@@ -13,6 +13,7 @@
 #include "pwr.h"
 #include "r.h"
 #include "ui.h"
+#include "prefs.h"
 
 enum action {
 	A_NEXT_POSTPROC,
@@ -184,6 +185,8 @@ static void set_builtin_keymap(int index)
 
 int main(int argc, char** argv)
 {
+	prefs_init();
+
 	set_builtin_keymap(0);
 
 	stm_setup();
