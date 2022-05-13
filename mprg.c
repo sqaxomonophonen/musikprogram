@@ -226,6 +226,9 @@ int main(int argc, char** argv)
 					}
 				}
 				ui_window_key_event(uw, e.key.code, e.key.pressed);
+				if (e.key.codepoint > 0) {
+					printf("key %c\n", e.key.codepoint);
+				}
 				break;
 			case GPUDL_MOTION:
 				if (uw) {

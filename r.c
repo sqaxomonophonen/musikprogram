@@ -9,6 +9,7 @@
 
 #include "embedded_resources.h"
 #include "r.h"
+#include "gpudl.h"
 #include "clip.h"
 #include "stb_ds.h"
 
@@ -1110,35 +1111,6 @@ void rt_goto(int cx, int cy)
 	r->font_cy = cy;
 }
 
-static int utf8_decode(const char** c0z, int* n)
-{
-	const unsigned char** c0 = (const unsigned char**)c0z;
-	if (*n <= 0) return -1;
-	unsigned char c = **c0;
-	(*n)--;
-	(*c0)++;
-	if ((c & 0x80) == 0) return c & 0x7f;
-	int mask = 192;
-	int d;
-	for (d = 1; d <= 3; d++) {
-		int match = mask;
-		mask = (mask >> 1) | 0x80;
-		if ((c & mask) == match) {
-			int codepoint = (c & ~mask) << (6*d);
-			while (d > 0 && *n > 0) {
-				c = **c0;
-				if ((c & 192) != 128) return -1;
-				(*c0)++;
-				(*n)--;
-				d--;
-				codepoint += (c & 63) << (6*d);
-			}
-			return d == 0 ? codepoint : -1;
-		}
-	}
-	return -1;
-}
-
 static union v2 get_offset()
 {
 	return v2(rstate.offset_x0, rstate.offset_y0);
@@ -1223,7 +1195,7 @@ void rt_printf(const char* fmt, ...)
 	int n = n0;
 	int last_codepoint = -1;
 	for (;;) {
-		int codepoint = utf8_decode(&p, &n);
+		int codepoint = gpudl_utf8_decode(&p, &n);
 		if (codepoint < 0) break;
 
 		if (codepoint < ' ') {
