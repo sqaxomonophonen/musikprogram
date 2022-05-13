@@ -52,6 +52,7 @@ void ui_pan(int dx, int dy);
 static inline void ui_dimensions(int* w, int* h) { ui_region(NULL, NULL, w, h); }
 void ui_enter(int x, int y, int w, int h, int flags);
 void ui_leave();
+
 int ui_keyseq(struct ui_keyseq* keyseq);
 int ui_key(int code);
 int ui_keyseq2(int code0, int code1);

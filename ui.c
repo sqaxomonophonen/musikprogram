@@ -110,8 +110,14 @@ void ui_leave()
 	}
 }
 
+static int has_keyboard_focus()
+{
+	return 1; // XXX TODO
+}
+
 int ui_keyseq(struct ui_keyseq* keyseq)
 {
+	if (!has_keyboard_focus()) return 0;
 	assert(keyseq->n > 0);
 	struct ui_window* uw = get_uw();
 	int last_serial = 0;
@@ -133,17 +139,17 @@ int ui_key(int code)
 
 int ui_keyseq2(int code0, int code1)
 {
-	return ui_keyseq(&(struct ui_keyseq) { .n=2, .code={ code0, code1 } });
+	return ui_keyseq(&(struct ui_keyseq) { .n=2, .code={ code0,code1 } });
 }
 
 int ui_keyseq3(int code0, int code1, int code2)
 {
-	return ui_keyseq(&(struct ui_keyseq) { .n=3, .code={ code0, code1, code2 } });
+	return ui_keyseq(&(struct ui_keyseq) { .n=3, .code={ code0,code1,code2 } });
 }
 
 int ui_keyseq4(int code0, int code1, int code2, int code3)
 {
-	return ui_keyseq(&(struct ui_keyseq) { .n=4, .code={ code0, code1, code2, code3 } });
+	return ui_keyseq(&(struct ui_keyseq) { .n=4, .code={ code0,code1,code2,code3 } });
 }
 
 union v2 ui_mpos()
