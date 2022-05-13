@@ -130,7 +130,7 @@ static int has_keyboard_focus()
 int ui_keyseq(struct ui_keyseq* keyseq)
 {
 	if (!has_keyboard_focus()) return 0;
-	assert(keyseq->n > 0);
+	if (keyseq->n == 0) return 0;
 	struct ui_window* uw = get_uw();
 	int last_serial = 0;
 	for (int i = 0; i < keyseq->n; i++) {

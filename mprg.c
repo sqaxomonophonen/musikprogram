@@ -14,6 +14,14 @@
 #include "r.h"
 #include "ui.h"
 
+enum action {
+	A_NEXT_POSTPROC,
+	A_ASSETS_SPLIT_LEFT,
+	A_ASSETS_SPLIT_RIGHT,
+	A_ASSETS,
+	A_MAX,
+};
+
 #define MAX_WINDOWS (16)
 
 int ptn0;
@@ -38,6 +46,9 @@ struct window {
 struct mprg {
 	int n_windows;
 	struct window windows[MAX_WINDOWS];
+	struct ui_keyseq keymap0[A_MAX];
+	struct ui_keyseq keymap1[A_MAX];
+	int goto_next_postproc;
 } mprg;
 
 static void new_window()
@@ -130,15 +141,15 @@ static void window_present(struct window* window)
 
 	ui_enter(0,0,w,h,CLIP);
 
-	if (ui_keyseq2(GK_LSHIFT, '/')) {
-		printf("MENU LEFT\n");
-	} else if (ui_keyseq2(GK_RSHIFT, '/')) {
-		printf("MENU RIGHT\n");
-	} else if (ui_key('/')) {
-		printf("MENU\n");
-	} else {
-		int c;
-		while ((c = ui_read()) != 0) printf("key %d/%c\n", c, c);
+	for (int i = 0; i < A_MAX; i++) {
+		if (ui_keyseq(&mprg.keymap0[i]) || ui_keyseq(&mprg.keymap1[i])) {
+			if (i == A_NEXT_POSTPROC) {
+				mprg.goto_next_postproc = 1;
+			} else {
+				printf("TODO action %d\n", i);
+			}
+			break;
+		}
 	}
 
 
@@ -159,8 +170,22 @@ static void window_present(struct window* window)
 	ui_end();
 }
 
+static void set_builtin_keymap(int index)
+{
+	if (index == 0) {
+		mprg.keymap0[A_NEXT_POSTPROC] = (struct ui_keyseq) { .n=1, .code={'p'} };
+		mprg.keymap0[A_ASSETS] = (struct ui_keyseq) { .n=1, .code={'/'} };
+		mprg.keymap0[A_ASSETS_SPLIT_LEFT] = (struct ui_keyseq) { .n=2, .code={GK_LSHIFT, '/'} };
+		mprg.keymap0[A_ASSETS_SPLIT_RIGHT] = (struct ui_keyseq) { .n=2, .code={GK_RSHIFT, '/'} };
+	} else {
+		assert(!"invalid index");
+	}
+}
+
 int main(int argc, char** argv)
 {
+	set_builtin_keymap(0);
+
 	stm_setup();
 	gpudl_init();
 
@@ -218,17 +243,6 @@ int main(int argc, char** argv)
 				do_close = 1;
 				break;
 			case GPUDL_KEY:
-				if (e.key.pressed) {
-					if (e.key.code == '\033') do_close = 1;
-					if (e.key.code == 'p') {
-						enum postproc_type t = r_get_postproc_type();
-						if (t == PP_GAUSS) {
-							r_set_postproc_type(PP_NONE);
-						} else {
-							r_set_postproc_type(PP_GAUSS);
-						}
-					}
-				}
 				ui_window_key_event(uw, e.key.code, e.key.pressed);
 				if (e.key.codepoint > 0) ui_window_codepoint(uw, e.key.codepoint);
 				break;
@@ -333,6 +347,16 @@ int main(int argc, char** argv)
 
 		if (fps_frame(fps)) printf("fps: %.2f / battery=%d\n", fps->fps, on_battery);
 		iteration++;
+
+		if (mprg.goto_next_postproc) {
+			mprg.goto_next_postproc = 0;
+			enum postproc_type t = r_get_postproc_type();
+			if (t == PP_GAUSS) {
+				r_set_postproc_type(PP_NONE);
+			} else {
+				r_set_postproc_type(PP_GAUSS);
+			}
+		}
 	}
 
 	return EXIT_SUCCESS;
