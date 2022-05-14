@@ -46,7 +46,13 @@ static int alloc()
 static const char* mappath(const char* path, char* buf, size_t bufsz)
 {
 	if (path[0] == '!') {
-		snprintf(buf, bufsz, "%s/.local/share/%s", getenv("HOME"), path+1);
+		char* home = getenv("HOME");
+		if (home == NULL) return NULL;
+		#ifdef __APPLE__
+		snprintf(buf, bufsz, "%s/Library/Preferences/%s", home, path+1);
+		#else
+		snprintf(buf, bufsz, "%s/.config/%s", home, path+1);
+		#endif
 		return buf;
 	} else {
 		return path;
@@ -57,6 +63,7 @@ int fs_readonly_map(const char* path, void** p, size_t* sz)
 {
 	char buf[65536];
 	path = mappath(path, buf, sizeof buf);
+	if (path == NULL) return -1;
 
 	int fd = open(path, O_RDONLY);
 	if (fd == -1) {
