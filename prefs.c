@@ -231,7 +231,7 @@ static int load_postproc_enum(struct loader* l, postproc_enum* v)
 	const char* s;
 	int r = load_str(l, &s);
 	if (r == BAD_VALUE) return r;
-	#define ENUM(x) if (strcmp(s, #x) == 0) { *v = POSTPROC_ ## x; return OK_VALUE; }
+	#define ENUM(x) if (strcmp(s, #x) == 0) { *v = POSTPROC_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
 	POSTPROC_ENUMS
 	#undef ENUM
 	return BAD_VALUE;
@@ -242,7 +242,7 @@ static int load_toplvl_layout_enum(struct loader* l, toplvl_layout_enum* v)
 	const char* s;
 	int r = load_str(l, &s);
 	if (r == BAD_VALUE) return r;
-	#define ENUM(x) if (strcmp(s, #x) == 0) { *v = TOPLVL_LAYOUT_ ## x; return OK_VALUE; }
+	#define ENUM(x) if (strcmp(s, #x) == 0) { *v = TOPLVL_LAYOUT_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
 	TOPLVL_LAYOUT_ENUMS
 	#undef ENUM
 	return BAD_VALUE;
