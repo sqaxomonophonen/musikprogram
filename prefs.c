@@ -208,6 +208,7 @@ static int load_str(struct loader* l, const char** v)
 
 		if (s != 0) {
 			buf[i++] = s;
+			if (i >= sizeof(buf)) return BAD_VALUE;
 		}
 	}
 	if (p0 != end || !terminated_properly || escape) return BAD_VALUE;
