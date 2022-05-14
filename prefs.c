@@ -14,6 +14,7 @@ struct loader {
 	char* k1;
 	char* end;
 	char* str;
+	size_t strsz;
 
 	int f;
 	void* ptr;
@@ -213,7 +214,11 @@ static int load_str(struct loader* l, const char** v)
 	}
 	if (p0 != end || !terminated_properly || escape) return BAD_VALUE;
 
-	l->str = realloc(l->str, i+1);
+	size_t strsz = i+1;
+	if (strsz > l->strsz) {
+		l->strsz = strsz;
+		l->str = realloc(l->str, strsz);
+	}
 	memcpy(l->str, buf, i);
 	l->str[i] = 0;
 	*v = l->str;
