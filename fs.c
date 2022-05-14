@@ -72,7 +72,7 @@ int fs_readonly_map(const char* path, void** p, size_t* sz)
 	if (sz) *sz = st.st_size;
 
 	void* addr = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	close(fd);
+	assert(close(fd) == 0);
 	if (addr == MAP_FAILED) {
 		return -1;
 	}
@@ -92,7 +92,7 @@ void fs_readonly_unmap(int handle)
 {
 	struct handle* h = &handles[handle];
 	assert(h->type == READONLY_MAP);
-	munmap(h->readonly_map.p, h->readonly_map.sz);
+	assert(munmap(h->readonly_map.p, h->readonly_map.sz) == 0);
 	h->type = FREE;
 }
 
