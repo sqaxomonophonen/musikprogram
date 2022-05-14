@@ -28,16 +28,6 @@ struct handle {
 struct handle handles[N_HANDLES];
 int handle_cursor;
 
-static const char* mappath(const char* path, char* buf, size_t bufsz)
-{
-	if (path[0] == '!') {
-		snprintf(buf, bufsz, "%s/.local/share/%s", getenv("HOME"), path+1);
-		return buf;
-	} else {
-		return path;
-	}
-}
-
 static int alloc()
 {
 	for (int i = 0; i < N_HANDLES; i++) {
@@ -46,6 +36,18 @@ static int alloc()
 		handle_cursor = (handle_cursor + 1) % N_HANDLES;
 	}
 	assert(!"no free file handle");
+}
+
+#ifdef __unix__
+
+static const char* mappath(const char* path, char* buf, size_t bufsz)
+{
+	if (path[0] == '!') {
+		snprintf(buf, bufsz, "%s/.local/share/%s", getenv("HOME"), path+1);
+		return buf;
+	} else {
+		return path;
+	}
 }
 
 int fs_readonly_map(const char* path, void** p, size_t* sz)
@@ -103,3 +105,9 @@ void fs_write(int handle, void* p, size_t sz)
 void fs_write_close(int handle)
 {
 }
+
+#else
+
+#error "missing implementation"
+
+#endif

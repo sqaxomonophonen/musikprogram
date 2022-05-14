@@ -15,12 +15,6 @@
 
 #define TODO assert(!"TODO");
 
-#ifdef __linux__
-#define ASSERT_LINUX
-#else
-#define ASSERT_LINUX assert(!"ASSERT_LINUX failed");
-#endif
-
 static inline float lerp(float t, float a, float b) { return a + t*(b-a); }
 
 union v2 {
