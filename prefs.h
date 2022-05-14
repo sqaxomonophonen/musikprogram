@@ -12,34 +12,36 @@
 	ENUM(X_SPLIT) \
 	ENUM(FOCUSED)
 
-enum postproc_enums {
+typedef enum {
 	#define ENUM(x) POSTPROC_ ## x,
 	POSTPROC_ENUMS
 	#undef ENUM
-};
+} postproc_enum;
 
-enum toplvl_layout_enums {
+typedef enum {
 	#define ENUM(x) TOPLVL_LAYOUT_ ## x,
 	TOPLVL_LAYOUT_ENUMS
 	#undef ENUM
-};
+} toplvl_layout_enum;
 
-#define STATES \
-	FIELD( toplvl_layout,           E(TOPLVL_LAYOUT_X_SPLIT,TOPLVL_LAYOUT_ENUMS)      ) \
-	FIELD( postproc,                E(POSTPROC_GAUSS,POSTPROC_ENUMS)                  ) \
-	FIELD( toplvl_x_split,          RR(0.33, 0.0, 1.0)                                ) \
-	FIELD( last_folder,             S("~")                                            ) \
-	FIELD( run_count,               I(0)                                              )
 
+#define STATE_FIELDS \
+	FIELD( toplvl_layout,           toplvl_layout_enum,   TOPLVL_LAYOUT_X_SPLIT       ) \
+	FIELD( postproc,                postproc_enum,        POSTPROC_GAUSS              ) \
+	FIELD( toplvl_x_split,          float,                0.33                        ) \
+	FIELD( run_count,               int,                  0                           )
+
+// TODO
+//FIELD( last_folder,             String,               NewString("~")              )
 
 // XXX how to integrate TILE_GROUPS from r_tile.h? each tile group needs a size
 // preference, similar to font size
 // NOTE some preferences might be too "complex" and handled separately... such
 // as audio interface setup? maybe?
-#define PREFERENCES \
-	FIELD( font_mono_size,          RI(24, 10, 200)                                   ) \
-	FIELD( font_variable_size,      RI(24, 10, 200)                                   ) \
-	FIELD( transition_duration,     RR(0.05, 0, 1)                                    )
+#define PREFERENCE_FIELDS \
+	FIELD( font_mono_size,          int,      24          ) \
+	FIELD( font_variable_size,      int,      24          ) \
+	FIELD( transition_duration,     float,    0.05        )
 
 
 #define COLORS \
@@ -53,28 +55,16 @@ enum toplvl_layout_enums {
 	ACTION( open_assets_right )
 
 struct states {
-	#define E(a,b) int
-	#define RR(a,b,c) float
-	#define S(a) char* // XXX or some string struct?
-	#define I(a) int
-	#define FIELD(NAME,TYPVAL) TYPVAL NAME;
-	STATES
+	#define FIELD(NAME,TYPE,DEFAULT) TYPE NAME;
+	STATE_FIELDS
 	#undef FIELD
-	#undef I
-	#undef S
-	#undef RR
-	#undef E
 };
 
 
 struct preferences {
-	#define RR(a,b,c) float
-	#define RI(a,b,c) int
-	#define FIELD(NAME,TYPVAL) TYPVAL NAME;
-	PREFERENCES
+	#define FIELD(NAME,TYPE,DEFAULT) TYPE NAME;
+	PREFERENCE_FIELDS
 	#undef FIELD
-	#undef RI
-	#undef RR
 };
 
 extern struct states states;
