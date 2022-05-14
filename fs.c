@@ -1,11 +1,14 @@
 #include <assert.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#ifdef __unix__
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
 #include "fs.h"
 
