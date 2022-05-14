@@ -12,13 +12,13 @@
 
 #include "fs.h"
 
-enum handle_type {
+enum descriptor_type {
 	FREE = 0,
 	READONLY_MAP,
 };
 
-struct handle {
-	enum handle_type type;
+struct descriptor {
+	enum descriptor_type type;
 	union {
 		struct {
 			void* p;
@@ -27,18 +27,19 @@ struct handle {
 	};
 };
 
-#define N_HANDLES (1<<16)
-struct handle handles[N_HANDLES];
-int handle_cursor;
+#define N_DESCRIPTORS (1<<16)
+struct descriptor descriptors[N_DESCRIPTORS];
+int cursor;
 
 static int alloc()
 {
-	for (int i = 0; i < N_HANDLES; i++) {
-		struct handle* h = &handles[handle_cursor];
-		if (h->type == FREE) return handle_cursor;
-		handle_cursor = (handle_cursor + 1) % N_HANDLES;
+	for (int i = 0; i < N_DESCRIPTORS; i++) {
+		cursor %= N_DESCRIPTORS;
+		struct descriptor* h = &descriptors[cursor];
+		if (h->type == FREE) return cursor;
+		cursor++;
 	}
-	assert(!"no free file handle");
+	return -1;
 }
 
 #ifdef __unix__
@@ -61,6 +62,9 @@ static const char* mappath(const char* path, char* buf, size_t bufsz)
 
 int fs_readonly_map(const char* path, void** p, size_t* sz)
 {
+	int handle = alloc();
+	if (handle < 0) return -1;
+
 	char buf[65536];
 	path = mappath(path, buf, sizeof buf);
 	if (path == NULL) return -1;
@@ -86,8 +90,7 @@ int fs_readonly_map(const char* path, void** p, size_t* sz)
 
 	if (p) *p = addr;
 
-	int handle = alloc();
-	struct handle* h = &handles[handle];
+	struct descriptor* h = &descriptors[handle];
 	h->type = READONLY_MAP;
 	h->readonly_map.p = addr;
 	h->readonly_map.sz = st.st_size;
@@ -97,7 +100,7 @@ int fs_readonly_map(const char* path, void** p, size_t* sz)
 
 void fs_readonly_unmap(int handle)
 {
-	struct handle* h = &handles[handle];
+	struct descriptor* h = &descriptors[handle];
 	assert(h->type == READONLY_MAP);
 	assert(munmap(h->readonly_map.p, h->readonly_map.sz) == 0);
 	h->type = FREE;
