@@ -1,4 +1,7 @@
+#include <stdio.h>
+
 #include "prefs.h"
+#include "fs.h"
 
 // TODO FILES:
 //  ~/.local/share/mprg/
@@ -33,4 +36,29 @@ void prefs_init()
 	#undef FIELD
 	#undef RI
 	#undef RR
+
+	{
+		void* p;
+		size_t sz;
+		int f = fs_readonly_map("!mprg/states", &p, &sz);
+		if (f >= 0) {
+			printf("opened states! (sz=%zd)\n", sz);
+			fs_readonly_unmap(f);
+		} else {
+			printf("no states :-(\n");
+		}
+	}
+
+
+	{
+		void* p;
+		size_t sz;
+		int f = fs_readonly_map("!mprg/preferences", &p, &sz);
+		if (f >= 0) {
+			printf("opened preferences! (sz=%zd)\n", sz);
+			fs_readonly_unmap(f);
+		} else {
+			printf("no preferences :-(\n");
+		}
+	}
 }
