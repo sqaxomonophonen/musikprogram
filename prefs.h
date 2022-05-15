@@ -70,6 +70,13 @@ struct preferences {
 	#undef FIELD
 };
 
+enum action {
+	#define ACTION(NAME) ACTION_ ## NAME,
+	ACTIONS
+	#undef ACTION
+	ACTION_END
+};
+
 struct keymap {
 	#define ACTION(NAME) struct ui_keyseq NAME[2];
 	ACTIONS

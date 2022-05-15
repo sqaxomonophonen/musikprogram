@@ -194,13 +194,13 @@ int main(int argc, char** argv)
 	WGSLS
 	#undef WGSL
 
-	#define FONT(path,symbol) add_binary(path,symbol);
-	FONTS
-	#undef FONT
-
 	#define TXT(path,symbol) add_txt(path,symbol, 0);
 	TXTS
 	#undef TXT
+
+	#define FONT(path,symbol) add_binary(path,symbol);
+	FONTS
+	#undef FONT
 
 	fclose(h_out);
 	fclose(c_out);

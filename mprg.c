@@ -15,14 +15,6 @@
 #include "ui.h"
 #include "prefs.h"
 
-enum action {
-	A_NEXT_POSTPROC,
-	A_ASSETS_SPLIT_LEFT,
-	A_ASSETS_SPLIT_RIGHT,
-	A_ASSETS,
-	A_MAX,
-};
-
 #define MAX_WINDOWS (16)
 
 int ptn0;
@@ -47,8 +39,6 @@ struct window {
 struct mprg {
 	int n_windows;
 	struct window windows[MAX_WINDOWS];
-	struct ui_keyseq keymap0[A_MAX];
-	struct ui_keyseq keymap1[A_MAX];
 	int goto_next_postproc;
 } mprg;
 
@@ -132,6 +122,32 @@ static void overlay_present(struct window* window)
 {
 }
 
+static void execute_action(enum action action)
+{
+	switch (action) {
+	case ACTION_next_postproc:
+		mprg.goto_next_postproc = 1;
+		break;
+	case ACTION_next_colorscheme:
+		printf("TODO next colorscheme\n");
+		break;
+	case ACTION_open_assets_left:
+		printf("TODO open_assets_left\n");
+		break;
+	case ACTION_open_assets_right:
+		printf("TODO open_assets_right\n");
+		break;
+	case ACTION_END: assert(!"XXX");
+	}
+}
+
+static void handle_actions()
+{
+	#define ACTION(NAME) if (ui_keyseq(&keymap.NAME[0]) || ui_keyseq(&keymap.NAME[1])) execute_action(ACTION_ ## NAME);
+	ACTIONS
+	#undef ACTION
+}
+
 static void window_present(struct window* window)
 {
 	ui_begin(&window->uw);
@@ -142,17 +158,7 @@ static void window_present(struct window* window)
 
 	ui_enter(0,0,w,h,CLIP);
 
-	for (int i = 0; i < A_MAX; i++) {
-		if (ui_keyseq(&mprg.keymap0[i]) || ui_keyseq(&mprg.keymap1[i])) {
-			if (i == A_NEXT_POSTPROC) {
-				mprg.goto_next_postproc = 1;
-			} else {
-				printf("TODO action %d\n", i);
-			}
-			break;
-		}
-	}
-
+	handle_actions();
 
 	ui_enter(0, 0, x1, h, CLIP);
 	tracker_present(window);
@@ -171,23 +177,9 @@ static void window_present(struct window* window)
 	ui_end();
 }
 
-static void set_builtin_keymap(int index)
-{
-	if (index == 0) {
-		mprg.keymap0[A_NEXT_POSTPROC] = (struct ui_keyseq) { .n=1, .code={'p'} };
-		mprg.keymap0[A_ASSETS] = (struct ui_keyseq) { .n=1, .code={'/'} };
-		mprg.keymap0[A_ASSETS_SPLIT_LEFT] = (struct ui_keyseq) { .n=2, .code={GK_LSHIFT, '/'} };
-		mprg.keymap0[A_ASSETS_SPLIT_RIGHT] = (struct ui_keyseq) { .n=2, .code={GK_RSHIFT, '/'} };
-	} else {
-		assert(!"invalid index");
-	}
-}
-
 int main(int argc, char** argv)
 {
 	prefs_init();
-
-	set_builtin_keymap(0);
 
 	stm_setup();
 	gpudl_init();

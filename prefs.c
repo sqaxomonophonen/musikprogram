@@ -5,6 +5,7 @@
 #include "prefs.h"
 #include "fs.h"
 #include "embedded_resources.h"
+#include "gpudl.h"
 
 #include "stb_ds.h"
 
@@ -180,10 +181,7 @@ static int parse_string(const char* p0, const char** p1, char* buf, size_t bufsz
 
 static void loader_next(struct loader* l)
 {
-	if (l->f < 0) {
-		l->more = 0;
-		return;
-	}
+	if (!l->more) return;
 
 	const char* pend = l->ptr + l->sz;
 	const char* p0 = l->p0;
@@ -272,6 +270,7 @@ static int loader_key(struct loader* l, const char* k)
 static void postinit_loader(struct loader* l)
 {
 	l->p0 = l->ptr;
+	l->more = 1;
 	loader_next(l);
 }
 
@@ -350,6 +349,43 @@ static int load_v4(struct loader* l, union v4* v)
 		v->s[i] = d;
 	}
 	return OK_VALUE;
+}
+
+static int load_keyseqn(struct loader* l, int n_keyseqs, struct ui_keyseq *keyseq)
+{
+	for (int i = 0; i < n_keyseqs; i++) keyseq[i].n = 0;
+	int n_tokens = arrlen(l->tokens);
+	if (n_tokens < 2) return OK_VALUE;
+	int ki = 0;
+	for (int i = 1; i < n_tokens; i++) {
+		struct token* tok = &l->tokens[i];
+		char buf[1024];
+		int r = token_get_string(l, tok, buf, sizeof buf);
+		if (r == BAD_VALUE) return r;
+		int len = strlen(buf);
+		int code = -1;
+		if (len == 4 && memcmp(buf, "*OR*", 4) == 0) {
+			ki++;
+			continue;
+		} else if (len == 1 && buf[0] < '~') {
+			code = buf[0];
+		} else {
+			#define GPUDL_KEY(NAME) if (len == strlen(#NAME) && memcmp(buf, #NAME, strlen(#NAME)) == 0) code = GK_ ## NAME;
+			GPUDL_KEYS
+			#undef GPUDL_KEY
+		}
+		if ((code < 0) || (ki >= n_keyseqs)) return BAD_VALUE;
+		struct ui_keyseq* ks = &keyseq[ki];
+		if (ks->n >= UI_KEYSEQ_MAX) return BAD_VALUE;
+		ks->code[ks->n++] = code;
+	}
+
+	return OK_VALUE;
+}
+
+static int load_keyseq2(struct loader* l, struct ui_keyseq *keyseq)
+{
+	return load_keyseqn(l, 2, keyseq);
 }
 
 static int load_postproc_enum(struct loader* l, postproc_enum* v)
@@ -432,10 +468,7 @@ static void load_keymap(struct keymap* km, struct loader* l)
 {
 	for (; l->more; loader_next(l)) {
 		int h = NO_VALUE;
-		// TODO key sequence loader... it's a variable list of strings,
-		// like:
-		//   open_assets_left "/" "*OR*" "LSHIFT" "/"
-		#define ACTION(NAME)
+		#define ACTION(NAME) if (loader_key(l, #NAME)) h = load_keyseq2(l, &km->NAME[0]);
 		ACTIONS
 		#undef ACTION
 		report(h, l);
