@@ -7,7 +7,7 @@ LDLIBS+=-lX11 -lm -ldl
 all: mprg
 
 build_embedded_resources_dot_c: build_embedded_resources_dot_c.c
-embedded_resources.c embedded_resources.h: build_embedded_resources_dot_c *.wgsl *.txt
+embedded_resources.c: build_embedded_resources_dot_c *.wgsl *.txt
 	./build_embedded_resources_dot_c
 embedded_resources.o: embedded_resources.c
 stb_ds.o: stb_ds.c stb_ds.h
@@ -21,7 +21,7 @@ r.o: r.c r.h r_tile.h
 r_tile_raster.o: r_tile_raster.c r_tile.h
 prefs.o: prefs.c prefs.h
 fs.o: fs.c fs.h
-mprg.o: mprg.c stb_ds.h sokol_time.h common.h gpudl.h fps.h pwr.h stb_rect_pack.h stb_truetype.h embedded_resources.h r_tile.h prefs.h
+mprg.o: mprg.c stb_ds.h sokol_time.h common.h gpudl.h fps.h pwr.h stb_rect_pack.h stb_truetype.h r_tile.h prefs.h
 mprg: mprg.o prefs.o fs.o clip.o ui.o r.o r_tile_raster.o stb_ds.o sokol_time.o gpudl.o embedded_resources.o stb_rect_pack.o stb_truetype.o
 
 clean:
