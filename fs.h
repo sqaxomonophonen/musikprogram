@@ -2,7 +2,7 @@
 
 #include <stdlib.h>
 
-int fs_readonly_map(const char* path, void** p, size_t* sz);
+int fs_readonly_map(const char* path, const void** p, size_t* sz);
 void fs_readonly_unmap(int fd);
 
 int fs_write_open(const char* path);

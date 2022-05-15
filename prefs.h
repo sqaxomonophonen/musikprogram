@@ -1,5 +1,7 @@
 #ifndef PREFS_H
 
+#include "ui.h"
+#include "common.h"
 
 #define POSTPROC_ENUMS \
 	ENUM(NONE) \
@@ -44,15 +46,17 @@ typedef enum {
 	FIELD( transition_duration,     float,    0.05        )
 
 
+#define ACTIONS \
+	ACTION( next_postproc ) \
+	ACTION( next_colorscheme ) \
+	ACTION( open_assets_left ) \
+	ACTION( open_assets_right )
+
+
 #define COLORS \
 	COLOR( background ) \
 	COLOR( color0 )
 
-
-#define ACTIONS \
-	ACTION( next_postproc ) \
-	ACTION( open_assets_left ) \
-	ACTION( open_assets_right )
 
 struct states {
 	#define FIELD(NAME,TYPE,DEFAULT) TYPE NAME;
@@ -60,15 +64,28 @@ struct states {
 	#undef FIELD
 };
 
-
 struct preferences {
 	#define FIELD(NAME,TYPE,DEFAULT) TYPE NAME;
 	PREFERENCE_FIELDS
 	#undef FIELD
 };
 
+struct keymap {
+	#define ACTION(NAME) struct ui_keyseq NAME;
+	ACTIONS
+	#undef ACTION
+};
+
+struct colorscheme {
+	#define COLOR(NAME) union v4 NAME;
+	COLORS
+	#undef COLOR
+};
+
 extern struct states states;
 extern struct preferences preferences;
+extern struct keymap keymap;
+extern struct colorscheme colorscheme;
 
 void prefs_init();
 

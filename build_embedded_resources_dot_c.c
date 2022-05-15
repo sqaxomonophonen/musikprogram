@@ -5,9 +5,12 @@
 	WGSL("ppgauss.wgsl",    "shadersrc_ppgauss"  )
 
 #define FONTS \
-	FONT("Cousine-Regular.ttf", "fontdata_mono") \
+	FONT("Cousine-Regular.ttf",        "fontdata_mono") \
 	FONT("SourceSansPro-SemiBold.ttf", "fontdata_variable")
 
+#define TXTS \
+	TXT("default_keymap_us.txt",     "default_keymap_us") \
+	TXT("default_colorscheme.txt",   "default_colorscheme")
 
 #include <stdio.h>
 #include <stdint.h>
@@ -64,7 +67,7 @@ static char** read_lines(const char* path)
 	return split_lines((char*)read_file(path, NULL));
 }
 
-static void inc_wgsl(const char* path)
+static void inc_txt(const char* path, int preprocessor)
 {
 	int line_number = 0;
 	for (char** lines = read_lines(path); *lines; lines++) {
@@ -72,7 +75,7 @@ static void inc_wgsl(const char* path)
 		char* line = *lines;
 
 		// check for #include
-		{
+		if (preprocessor) {
 			char* p = line;
 			while (*p != 0 && (*p == ' ' || *p == '\t')) p++;
 			if (*p == '#') {
@@ -91,7 +94,7 @@ static void inc_wgsl(const char* path)
 					char* inc_path = malloc(n+1);
 					memcpy(inc_path, p0, n);
 					inc_path[n] = 0;
-					inc_wgsl(inc_path);
+					inc_txt(inc_path, preprocessor);
 					continue;
 				} else {
 					fprintf(stderr, "unhandled \"#\"-directive at line %d\n", line_number);
@@ -116,10 +119,10 @@ static void inc_wgsl(const char* path)
 	}
 }
 
-static void add_wgsl(const char* path, const char* symbol)
+static void add_txt(const char* path, const char* symbol, int preprocessor)
 {
 	fprintf(c_out, "char* %s =\n", symbol);
-	inc_wgsl(path);
+	inc_txt(path, preprocessor);
 	fprintf(c_out, ";\n\n");
 
 	fprintf(h_out, "extern char* %s;\n", symbol);
@@ -185,15 +188,17 @@ int main(int argc, char** argv)
 	fprintf(c_out, "// made by `%s`\n\n", argv[0]);
 	fprintf(h_out, "// made by `%s`\n\n", argv[0]);
 
-	#define WGSL(path,symbol) \
-		add_wgsl(path, symbol);
+	#define WGSL(path,symbol) add_txt(path, symbol, 1);
 	WGSLS
 	#undef WGSL
 
-	#define FONT(path,symbol) \
-		add_binary(path,symbol);
+	#define FONT(path,symbol) add_binary(path,symbol);
 	FONTS
 	#undef FONT
+
+	#define TXT(path,symbol) add_txt(path,symbol, 0);
+	TXTS
+	#undef TXT
 
 	fclose(h_out);
 	fclose(c_out);

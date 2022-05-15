@@ -4,22 +4,25 @@
 
 #include "prefs.h"
 #include "fs.h"
+#include "embedded_resources.h"
 
 struct states states;
 struct preferences preferences;
+struct keymap keymap;
+struct colorscheme colorscheme;
 
 struct loader {
 	int more;
-	char* k0;
-	char* k1;
-	char* end;
+	const char* k0;
+	const char* k1;
+	const char* end;
 	char* str;
 	size_t strsz;
 
 	int f;
-	void* ptr;
+	const void* ptr;
 	size_t sz;
-	char* p0;
+	const char* p0;
 };
 
 static inline int is_symbol_char(char c)
@@ -52,10 +55,10 @@ static void loader_next(struct loader* l)
 	const char* pend = l->ptr + l->sz;
 
 	while (l->p0 < pend) {
-		char* p0 = l->p0;
-		char* p1 = p0;
+		const char* p0 = l->p0;
+		const char* p1 = p0;
 		while (p1 < pend && is_symbol_char(*p1)) p1++;
-		char* p2 = p1;
+		const char* p2 = p1;
 		while (p2 < pend && !is_newline(*p2)) p2++;
 		l->p0 = p2+1;
 
@@ -72,9 +75,10 @@ static void loader_next(struct loader* l)
 
 	}
 
-	assert(l->f >= 0);
-	fs_readonly_unmap(l->f);
-	l->f = -1;
+	if (l->f >= 0) {
+		fs_readonly_unmap(l->f);
+		l->f = -1;
+	}
 
 	if (l->str != NULL) {
 		free(l->str);
@@ -91,12 +95,27 @@ static int loader_key(struct loader* l, const char* k)
 	return (sz0 != sz1) ? 0 : memcmp(l->k0, k, sz0) == 0;
 }
 
-static struct loader loader(const char* path)
+static void postinit_loader(struct loader* l)
+{
+	l->p0 = l->ptr;
+	loader_next(l);
+}
+
+static struct loader file_loader(const char* path)
 {
 	struct loader l = {0};
 	l.f = fs_readonly_map(path, &l.ptr, &l.sz);
-	l.p0 = l.ptr;
-	loader_next(&l);
+	postinit_loader(&l);
+	return l;
+}
+
+static struct loader cstr_loader(const char* cstr)
+{
+	struct loader l = {0};
+	l.f = -1;
+	l.ptr = cstr;
+	l.sz = strlen(cstr);
+	postinit_loader(&l);
 	return l;
 }
 
@@ -107,9 +126,9 @@ static struct loader loader(const char* path)
 static int load_double(struct loader* l, double* v)
 {
 	char buf[65536];
-	char* k1 = l->k1;
+	const char* k1 = l->k1;
 	while (is_whitespace(*k1)) k1++;
-	char* end = l->end;
+	const char* end = l->end;
 	if (k1 >= end) return BAD_VALUE;
 	size_t n = end - k1;
 	if (n >= sizeof(buf)) return BAD_VALUE;
@@ -135,6 +154,11 @@ static int load_float(struct loader* l, float* v)
 	return r;
 }
 
+static int load_v4(struct loader* l, union v4* v)
+{
+	return BAD_VALUE; // TODO
+}
+
 static inline int hexdigit(char c)
 {
 	if ('0' <= c && c <= '9') {
@@ -152,9 +176,9 @@ static inline int hexdigit(char c)
 // load_str() call
 static int load_str(struct loader* l, const char** v)
 {
-	char* p0 = l->k1;
+	const char* p0 = l->k1;
 	while (is_whitespace(*p0)) p0++;
-	char* end = l->end;
+	const char* end = l->end;
 	if (p0 >= end) return BAD_VALUE;
 	int i = 0;
 	char buf[65536];
@@ -280,7 +304,7 @@ static void report(int h, struct loader* l)
 
 static void states_load()
 {
-	for (struct loader l = loader("!mprg/states"); l.more; loader_next(&l)) {
+	for (struct loader l = file_loader("!mprg/states"); l.more; loader_next(&l)) {
 		int h = NO_VALUE;
 		#define FIELD(NAME,TYPE,DEFAULT) if (loader_key(&l, #NAME)) h = load_##TYPE(&l, &states.NAME);
 		STATE_FIELDS
@@ -291,7 +315,7 @@ static void states_load()
 
 static void preferences_load()
 {
-	for (struct loader l = loader("!mprg/preferences"); l.more; loader_next(&l)) {
+	for (struct loader l = file_loader("!mprg/preferences"); l.more; loader_next(&l)) {
 		int h = NO_VALUE;
 		#define FIELD(NAME,TYPE,DEFAULT) if (loader_key(&l, #NAME)) h = load_##TYPE(&l, &preferences.NAME);
 		PREFERENCE_FIELDS
@@ -300,10 +324,49 @@ static void preferences_load()
 	}
 }
 
+static void load_keymap(struct keymap* km, struct loader* l)
+{
+	for (; l->more; loader_next(l)) {
+		int h = NO_VALUE;
+		// TODO key sequence loader... it's a variable list of strings,
+		// like:
+		//   open_assets_left "/" "*OR*" "LSHIFT" "/"
+		#define ACTION(NAME)
+		ACTIONS
+		#undef ACTION
+		report(h, l);
+	}
+}
+
+static void load_colorscheme(struct colorscheme* cs, struct loader* l)
+{
+	for (; l->more; loader_next(l)) {
+		int h = NO_VALUE;
+		#define COLOR(NAME) load_v4(l, &cs->NAME);
+		COLORS
+		#undef COLOR
+		report(h, l);
+	}
+}
+
+static void keymap_set_defaults()
+{
+	struct loader l = cstr_loader(default_keymap_us);
+	load_keymap(&keymap, &l);
+}
+
+static void colorscheme_set_defaults()
+{
+	struct loader l = cstr_loader(default_colorscheme);
+	load_colorscheme(&colorscheme, &l);
+}
+
 void prefs_init()
 {
 	states_set_defaults();
 	states_load();
 	preferences_set_defaults();
 	preferences_load();
+	keymap_set_defaults();
+	colorscheme_set_defaults();
 }

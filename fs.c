@@ -60,7 +60,7 @@ static const char* mappath(const char* path, char* buf, size_t bufsz)
 	}
 }
 
-int fs_readonly_map(const char* path, void** p, size_t* sz)
+int fs_readonly_map(const char* path, const void** p, size_t* sz)
 {
 	int handle = alloc();
 	if (handle < 0) return -1;

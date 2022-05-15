@@ -1,0 +1,4 @@
+next_postproc "p"
+next_colorscheme "c"
+open_assets_left "/" "*OR*" "LSHIFT" "/"
+open_assets_right "RSHIFT" "/"
