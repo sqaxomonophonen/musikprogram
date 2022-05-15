@@ -66,13 +66,13 @@ static int get_flags()
 	return u->current_flags;
 }
 
-void ui_region(int* x, int* y, int* w, int* h)
+void ui_dim(int* w, int* h)
 {
-	struct rect* cr = get_region();
-	if (x) *x = cr->x;
-	if (y) *y = cr->y;
-	if (w) *w = cr->w;
-	if (h) *h = cr->h;
+	struct uistate* u = &uistate;
+	const int n = u->n_regions;
+	assert((n > 0) && "no region");
+	if (w) *w = u->regions[n-1].w;
+	if (h) *h = u->regions[n-1].h;
 }
 
 void ui_pan(int dx, int dy)
@@ -91,7 +91,7 @@ static void region_refresh()
 	} else {
 		assert(n_regions > 0);
 		struct rect abs_region = u->regions[0];
-		struct rect clip_rect = u->regions[0];
+		struct rect clip_rect = abs_region;
 		union v2 abs_offset = v2(abs_region.x, abs_region.y);
 		int flags = u->flags[0];
 		int sticky_flags = 0;
@@ -192,7 +192,7 @@ int ui_read()
 
 union v2 ui_mpos()
 {
-	return v2_sub(get_uw()->mpos, rect_origin(get_region()));
+	return v2_sub(get_uw()->mpos, get_offset());
 }
 
 int ui_clicked(enum gpudl_button button)
