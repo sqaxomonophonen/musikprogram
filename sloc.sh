@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 
+FULL=$1
+
 sloc() {
-	#cat
-	echo -ne "$1:\t"
-	xargs cat | wc -l
+	if [ "$FULL" = "1" ] ; then
+		xargs wc -l | grep -v " total$"
+	else
+		echo -ne "$1:\t"
+		xargs cat | wc -l
+	fi
 }
 
 git ls-files '*.c' | sloc ".c"
