@@ -11,6 +11,11 @@ struct uistate {
 	struct rect regions[MAX_REGION_STACK_SIZE];
 	int flags[MAX_REGION_STACK_SIZE];
 	struct ui_window* uw;
+
+	// derived
+	union v2 current_offset;
+	struct rect current_region;
+	int current_flags;
 } uistate;
 
 void ui_begin(struct ui_window* uw)
@@ -44,14 +49,21 @@ static struct rect* get_region()
 {
 	struct uistate* u = &uistate;
 	assert((u->n_regions > 0) && "no region");
-	return &u->regions[u->n_regions - 1];
+	return &u->current_region;
+}
+
+static union v2 get_offset()
+{
+	struct uistate* u = &uistate;
+	assert((u->n_regions > 0) && "no region");
+	return u->current_offset;
 }
 
 static int get_flags()
 {
 	struct uistate* u = &uistate;
 	assert((u->n_regions > 0) && "no region");
-	return u->flags[u->n_regions - 1];
+	return u->current_flags;
 }
 
 void ui_region(int* x, int* y, int* w, int* h)
@@ -65,8 +77,40 @@ void ui_region(int* x, int* y, int* w, int* h)
 
 void ui_pan(int dx, int dy)
 {
-	const struct rect* cr = get_region();
-	r_offset(cr->x + dx, cr->y + dy);
+	union v2 off = get_offset();
+	r_offset(off.x+dx, off.y+dy);
+}
+
+static void region_refresh()
+{
+	struct uistate* u = &uistate;
+	const int n_regions = u->n_regions;
+	if (n_regions == 0) {
+		r_clip(0,0,0,0);
+		r_offset(0,0);
+	} else {
+		assert(n_regions > 0);
+		struct rect abs_region = u->regions[0];
+		struct rect clip_rect = u->regions[0];
+		union v2 abs_offset = v2(abs_region.x, abs_region.y);
+		int flags = u->flags[0];
+		int sticky_flags = 0;
+		for (int i = 1; i < n_regions; i++) {
+			struct rect r = u->regions[i];
+			abs_offset = v2_add(abs_offset, v2(r.x, r.y));
+			struct rect r2 = rect(abs_offset.x, abs_offset.y, r.w, r.h);
+			rect_intersection(&abs_region, &abs_region, &r2);
+			flags = u->flags[i];
+			if (flags & CLIP) rect_intersection(&clip_rect, &clip_rect, &r2);
+			if (flags & NO_INPUT) sticky_flags |= NO_INPUT;
+		}
+		r_offset(abs_offset.x, abs_offset.y);
+		r_clip(clip_rect.x, clip_rect.y, clip_rect.w, clip_rect.h);
+		u->current_offset = abs_offset;
+		u->current_region = abs_region;
+		u->current_flags = flags | sticky_flags;
+		ui_pan(0,0);
+	}
 }
 
 void ui_enter(int x, int y, int w, int h, int flags)
@@ -76,28 +120,11 @@ void ui_enter(int x, int y, int w, int h, int flags)
 	assert(n >= 0);
 	assert((n < MAX_REGION_STACK_SIZE) && "too many regions");
 
-	if (x < 0) { w += x; x = 0; }
-	if (y < 0) { h += y; y = 0; }
-
 	u->flags[u->n_regions] = flags;
-	struct rect* nr = &u->regions[u->n_regions];
-	if (n == 0) {
-		*nr = rect(x,y,w,h);
-	} else if (n > 0) {
-		struct rect* cr = &u->regions[u->n_regions-1];
-		const float nx = cr->x + x;
-		const float ny = cr->y + y;
-		const float nw = x+w > cr->w ? cr->w - x : w;
-		const float nh = y+h > cr->h ? cr->h - y : h;
-		*nr = rect(nx,ny,nw,nh);
-	}
+	u->regions[u->n_regions] = rect(x,y,w,h);
 	u->n_regions++;
 
-	ui_pan(0,0);
-	if (n == 0 || (flags & CLIP)) {
-		const struct rect* cr = get_region();
-		r_clip(cr->x, cr->y, cr->w, cr->h);
-	}
+	region_refresh();
 }
 
 void ui_leave()
@@ -105,18 +132,7 @@ void ui_leave()
 	struct uistate* u = &uistate;
 	assert((u->n_regions > 0) && "no region");
 	u->n_regions--;
-
-	if (u->n_regions > 0) {
-		ui_pan(0,0);
-	}
-
-	for (int i = u->n_regions-1; i >= 0; i--) {
-		if (i == 0 || (u->flags[i] & CLIP)) {
-			struct rect* rr = &u->regions[i];
-			r_clip(rr->x, rr->y, rr->w, rr->h);
-			break;
-		}
-	}
+	region_refresh();
 }
 
 static int has_keyboard_focus()

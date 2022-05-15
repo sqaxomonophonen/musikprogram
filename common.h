@@ -80,6 +80,22 @@ static inline int rect_contains(const struct rect* rect, union v2* p)
 	return x0<=x && x<x1 && y0<=y && y<y1;
 }
 
+static inline void rect_intersection(struct rect* dst, const struct rect* a, const struct rect* b)
+{
+	struct rect d;
+	d.x = a->x > b->x ? a->x : b->x;
+	d.y = a->y > b->y ? a->y : b->y;
+	const float ax1 = a->x + a->w;
+	const float ay1 = a->y + a->h;
+	const float bx1 = b->x + b->w;
+	const float by1 = b->y + b->h;
+	d.w = (ax1 < bx1 ? ax1 : bx1) - d.x;
+	d.h = (ay1 < by1 ? ay1 : by1) - d.y;
+	if (d.w < 0) d.w = 0;
+	if (d.h < 0) d.h = 0;
+	*dst = d;
+}
+
 
 static inline uint8_t f2u8(float value)
 {
