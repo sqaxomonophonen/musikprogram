@@ -34,6 +34,7 @@ struct window {
 	struct postproc_window ppw;
 	struct ui_window uw;
 	struct window_graph graph;
+	int open_assets;
 };
 
 struct mprg {
@@ -122,7 +123,7 @@ static void overlay_present(struct window* window)
 {
 }
 
-static void execute_action(enum action action)
+static void execute_action(struct window* window, enum action action)
 {
 	switch (action) {
 	case ACTION_next_postproc:
@@ -132,18 +133,18 @@ static void execute_action(enum action action)
 		printf("TODO next colorscheme\n");
 		break;
 	case ACTION_open_assets_left:
-		printf("TODO open_assets_left\n");
+		window->open_assets = 1;
 		break;
 	case ACTION_open_assets_right:
-		printf("TODO open_assets_right\n");
+		window->open_assets = 2;
 		break;
 	case ACTION_END: assert(!"XXX");
 	}
 }
 
-static void handle_actions()
+static void handle_actions(struct window* window)
 {
-	#define ACTION(NAME) if (ui_keyseq(&keymap.NAME[0]) || ui_keyseq(&keymap.NAME[1])) execute_action(ACTION_ ## NAME);
+	#define ACTION(NAME) if ((keymap.NAME[0].n > 0 && ui_keyseq(&keymap.NAME[0])) || (keymap.NAME[1].n > 0 && ui_keyseq(&keymap.NAME[1]))) execute_action(window, ACTION_ ## NAME);
 	ACTIONS
 	#undef ACTION
 }
@@ -158,7 +159,7 @@ static void window_present(struct window* window)
 
 	ui_enter(0,0,w,h,CLIP);
 
-	handle_actions();
+	handle_actions(window);
 
 	ui_enter(0, 0, x1, h, CLIP);
 	tracker_present(window);
