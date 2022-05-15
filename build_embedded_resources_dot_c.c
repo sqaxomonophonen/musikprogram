@@ -185,8 +185,10 @@ int main(int argc, char** argv)
 	h_out = fopen("embedded_resources.h", "w");
 	assert(h_out);
 
-	fprintf(c_out, "// made by `%s`\n\n", argv[0]);
-	fprintf(h_out, "// made by `%s`\n\n", argv[0]);
+	const char* SLUG = "XXX DON'T EDIT: instead run";
+
+	fprintf(c_out, "// %s `%s`\n\n", SLUG, argv[0]);
+	fprintf(h_out, "// %s `%s`\n\n", SLUG, argv[0]);
 
 	#define WGSL(path,symbol) add_txt(path, symbol, 1);
 	WGSLS
