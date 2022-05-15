@@ -6,18 +6,29 @@
 #include "fs.h"
 #include "embedded_resources.h"
 
+#include "stb_ds.h"
+
 struct states states;
 struct preferences preferences;
 struct keymap keymap;
 struct colorscheme colorscheme;
 
+enum token_type {
+	TOKEN_SYMBOL = 1,
+	TOKEN_NUMBER,
+	TOKEN_STRING,
+};
+
+struct token {
+	enum token_type t;
+	int offset;
+	int len;
+};
+
 struct loader {
 	int more;
-	const char* k0;
-	const char* k1;
-	const char* end;
-	char* str;
-	size_t strsz;
+
+	struct token* tokens;
 
 	int f;
 	const void* ptr;
@@ -25,13 +36,44 @@ struct loader {
 	const char* p0;
 };
 
-static inline int is_symbol_char(char c)
+static inline int is_symbol_char0(char c)
 {
 	return
 		   ('a' <= c && c <= 'z')
 		|| ('A' <= c && c <= 'Z')
-		|| ('0' <= c && c <= '9')
 		|| c == '_';
+}
+
+static inline int is_symbol_char(char c)
+{
+	return is_symbol_char0(c) || ('0' <= c && c <= '9');
+}
+
+static inline int decimal_digit(char c)
+{
+	if ('0' <= c && c <= '9') {
+		return c-'0';
+	} else {
+		return -1;
+	}
+}
+
+static inline int hex_digit(char c)
+{
+	if ('0' <= c && c <= '9') {
+		return c-'0';
+	} else if ('a' <= c && c <= 'f') {
+		return c-'a'+10;
+	} else if ('A' <= c && c <= 'F') {
+		return c-'A'+10;
+	} else {
+		return -1;
+	}
+}
+
+static inline int is_number_char0(char c)
+{
+	return c=='-' || c=='.' || ('0'<=c && c<='9');
 }
 
 static inline int is_whitespace(char c)
@@ -44,6 +86,97 @@ static inline int is_newline(char c)
 	return c == '\n' || c == '\r';
 }
 
+static int parse_number(const char* p0, const char** p1, double* v)
+{
+	int points = 0;
+	int lexer_error = 0;
+	while (p0 < *p1) {
+		if (decimal_digit(*p0) >= 0) {
+			p0++;
+		} else if (*p0 == '.') {
+			points++;
+			if (points >= 2) {
+				lexer_error = 1;
+				break;
+			}
+			p0++;
+		} else if (is_whitespace(*p0) || is_newline(*p0)) {
+			break;
+		} else {
+			lexer_error = 1;
+			break;
+		}
+	}
+	if (lexer_error) while (p0 < *p1 && !is_newline(*p0)) p0++;
+	*p1 = p0;
+	return !lexer_error;
+}
+
+static int parse_string(const char* p0, const char** p1, char* buf, size_t bufsz)
+{
+	assert(*p0 == '"');
+	p0++;
+	int lexer_error = 1; // until terminated properly
+	int escape = 0;
+	int hexscape = 0;
+	char hex = 0;
+	int bufn = 0;
+	while (p0 < *p1) {
+		char c = *(p0++);
+		char s = 0;
+		if (hexscape) {
+			assert(escape);
+			int hd = hex_digit(c);
+			if (hd < 0) break;
+			assert(0 <= hd && hd < 16);
+			if (hexscape == 1) {
+				hex = hd << 4;
+				hexscape++;
+			} else if (hexscape == 2) {
+				hex |= hd;
+				s = hex;
+			} else {
+				assert(!"unreachable");
+			}
+		} else if (escape) {
+			assert(hexscape == 0);
+			int err = 0;
+			switch (c) {
+			case '\\': s='\\'; break;
+			case '"':  s='"';  break;
+			case 'n':  s='\n'; break;
+			case 'r':  s='\r'; break;
+			case 't':  s='\t'; break;
+			case 'x':  hexscape++; break;
+			default:   err=1; break;
+			}
+			if (err) break;
+		} else {
+			assert(hexscape == 0);
+			if (c == '"') {
+				lexer_error = 0;
+				break;
+			} else if (c == '\\') {
+				escape = 1;
+			} else if (' ' <= c && c <= '~') {
+				s = c;
+			} else {
+				break;
+			}
+		}
+
+		if (s != 0 && buf != NULL) {
+			buf[bufn++] = s;
+			if (bufn >= bufsz) break;
+		}
+	}
+
+	if (buf != NULL) buf[bufn >= bufsz ? 0 : bufn] = 0;
+	if (lexer_error) while (p0 < *p1 && !is_newline(*p0)) p0++;
+	*p1 = p0;
+	return lexer_error ? -1 : bufn;
+}
+
 
 static void loader_next(struct loader* l)
 {
@@ -53,46 +186,87 @@ static void loader_next(struct loader* l)
 	}
 
 	const char* pend = l->ptr + l->sz;
+	const char* p0 = l->p0;
 
-	while (l->p0 < pend) {
-		const char* p0 = l->p0;
-		const char* p1 = p0;
-		while (p1 < pend && is_symbol_char(*p1)) p1++;
-		const char* p2 = p1;
-		while (p2 < pend && !is_newline(*p2)) p2++;
-		l->p0 = p2+1;
+	arrsetlen(l->tokens, 0);
 
-		if (p0 < p1 && p1 < p2 && is_whitespace(*p1)) {
-			//printf("proper line [[");
-			//fwrite(p0, p2-p0, 1, stdout);
-			//printf("]]\n");
-			l->k0 = p0;
-			l->k1 = p1;
-			l->end = p2;
-			l->more = 1;
-			return;
+	#define SKIP_P0_TO_NEWLINE while (p0 < pend && !is_newline(*p0)) p0++;
+	#define YIELD_IF_TOKENS if (arrlen(l->tokens) > 0) break;
+	#define SKIP_P0_TO_NEWLINE_AND_YIELD_IF_TOKENS \
+		SKIP_P0_TO_NEWLINE \
+		YIELD_IF_TOKENS
+
+	while (p0 < pend) {
+		while (p0 < pend && is_whitespace(*p0)) p0++;
+		if (p0 >= pend) break;
+
+		assert(!is_whitespace(*p0));
+
+		const int offset = p0 - (const char*)l->ptr;
+
+		if (is_symbol_char0(*p0)) {
+			const char* p1 = p0;
+			while (p1 < pend && is_symbol_char(*p1)) p1++;
+			arrput(l->tokens, ((struct token) {
+				.t      = TOKEN_SYMBOL,
+				.offset = offset,
+				.len    = p1 - p0,
+			}));
+			p0 = p1;
+		} else if (is_number_char0(*p0)) {
+			const char* p1 = pend;
+			if (parse_number(p0, &p1, NULL)) {
+				arrput(l->tokens, ((struct token) {
+					.t      = TOKEN_NUMBER,
+					.offset = offset,
+					.len    = p1 - p0,
+				}));
+			} else {
+				printf("TODO: number lexer error\n");
+			}
+			p0 = p1;
+		} else if (*p0 == '"') {
+			const char* p1 = pend;
+			if (parse_string(p0, &p1, NULL, 0) >= 0) {
+				arrput(l->tokens, ((struct token) {
+					.t      = TOKEN_STRING,
+					.offset = offset,
+					.len    = p1 - p0,
+				}));
+			} else {
+				printf("TODO: string lexer error\n");
+			}
+			p0 = p1;
+		} else if (is_newline(*p0)) {
+			YIELD_IF_TOKENS
+			p0++;
+		} else if (*p0 == '#') {
+			SKIP_P0_TO_NEWLINE_AND_YIELD_IF_TOKENS
+		} else {
+			printf("TODO: lexer error (2)\n");
+			SKIP_P0_TO_NEWLINE_AND_YIELD_IF_TOKENS
 		}
-
 	}
 
-	if (l->f >= 0) {
-		fs_readonly_unmap(l->f);
-		l->f = -1;
-	}
+	#undef SKIP_P0_TO_NEWLINE_AND_YIELD_IF_TOKENS
+	#undef YIELD_IF_TOKENS
+	#undef SKIP_P0_TO_NEWLINE
 
-	if (l->str != NULL) {
-		free(l->str);
-		l->str = NULL;
-	}
+	l->more = arrlen(l->tokens);
+	l->p0 = p0;
 
-	l->more = 0;
+	if (!l->more) {
+		if (l->f >= 0) {
+			fs_readonly_unmap(l->f);
+			l->f = -1;
+		}
+	}
 }
 
 static int loader_key(struct loader* l, const char* k)
 {
-	size_t sz0 = strlen(k);
-	size_t sz1 = l->k1 - l->k0;
-	return (sz0 != sz1) ? 0 : memcmp(l->k0, k, sz0) == 0;
+	if (arrlen(l->tokens) < 1 || l->tokens[0].t != TOKEN_SYMBOL) return 0;
+	return memcmp(k, l->ptr + l->tokens[0].offset, l->tokens[0].len) == 0;
 }
 
 static void postinit_loader(struct loader* l)
@@ -123,19 +297,31 @@ static struct loader cstr_loader(const char* cstr)
 #define OK_VALUE  (1)
 #define BAD_VALUE (2)
 
-static int load_double(struct loader* l, double* v)
+static int token_get_double(struct loader* l, struct token* tok, double* v)
 {
+	if (tok->t != TOKEN_NUMBER) return BAD_VALUE;
 	char buf[65536];
-	const char* k1 = l->k1;
-	while (is_whitespace(*k1)) k1++;
-	const char* end = l->end;
-	if (k1 >= end) return BAD_VALUE;
-	size_t n = end - k1;
-	if (n >= sizeof(buf)) return BAD_VALUE;
-	memcpy(buf, k1, n);
-	buf[n] = 0;
+	if (tok->len >= sizeof(buf)) return BAD_VALUE;
+	memcpy(buf, l->ptr + tok->offset, tok->len);
+	buf[tok->len] = 0;
 	*v = strtod(buf, NULL);
 	return OK_VALUE;
+}
+
+static int token_get_string(struct loader* l, struct token* tok, char* buf, size_t bufsz)
+{
+	if (tok->t != TOKEN_STRING) return BAD_VALUE;
+	const char* p0 = l->ptr + tok->offset;
+	const char* p1 = p0 + tok->len;
+	assert(parse_string(p0, &p1, buf, bufsz) >= 0);
+	assert(p1 == p0 + tok->len);
+	return OK_VALUE;
+}
+
+static int load_double(struct loader* l, double* v)
+{
+	if (arrlen(l->tokens) != 2) return BAD_VALUE;
+	return token_get_double(l, &l->tokens[1], v);
 }
 
 static int load_int(struct loader* l, int* v)
@@ -156,106 +342,23 @@ static int load_float(struct loader* l, float* v)
 
 static int load_v4(struct loader* l, union v4* v)
 {
-	return BAD_VALUE; // TODO
-}
-
-static inline int hexdigit(char c)
-{
-	if ('0' <= c && c <= '9') {
-		return c-'0';
-	} else if ('a' <= c && c <= 'f') {
-		return c-'a'+10;
-	} else if ('A' <= c && c <= 'F') {
-		return c-'A'+10;
-	} else {
-		return -1;
+	if (arrlen(l->tokens) != 5) return BAD_VALUE;
+	for (int i = 0; i < 4; i++) {
+		double d;
+		int r = token_get_double(l, &l->tokens[1+i], &d);
+		if (r == BAD_VALUE) return r;
+		v->s[i] = d;
 	}
-}
-
-// string is owned by loader; don't free() it; it is only valid until the next
-// load_str() call
-static int load_str(struct loader* l, const char** v)
-{
-	const char* p0 = l->k1;
-	while (is_whitespace(*p0)) p0++;
-	const char* end = l->end;
-	if (p0 >= end) return BAD_VALUE;
-	int i = 0;
-	char buf[65536];
-	if (*(p0++) != '"') return BAD_VALUE;
-	if (p0 >= end) return BAD_VALUE;
-
-	int terminated_properly = 0;
-	int escape = 0;
-	int hexscape = 0;
-	char hex = 0;
-	while (p0 < end) {
-		char c = *(p0++);
-		char s = 0;
-		if (hexscape) {
-			assert(escape);
-			int hd = hexdigit(c);
-			if (hd < 0) return BAD_VALUE;
-			assert(0 <= hd && hd < 16);
-			if (hexscape == 1) {
-				hex = hd << 4;
-				hexscape++;
-			} else if (hexscape == 2) {
-				hex |= hd;
-				s = hex;
-			} else {
-				assert(!"unreachable");
-			}
-		} else if (escape) {
-			assert(hexscape == 0);
-			switch (c) {
-			case '\\': s='\\'; break;
-			case '"':  s='"';  break;
-			case 'n':  s='\n'; break;
-			case 'r':  s='\r'; break;
-			case 't':  s='\t'; break;
-			case 'x':  hexscape++; break;
-			default: return BAD_VALUE;
-			}
-		} else {
-			assert(hexscape == 0);
-			if (c == '"') {
-				terminated_properly = 1;
-				break;
-			} else if (c == '\\') {
-				escape = 1;
-			} else if (' ' <= c && c <= '~') {
-				s = c;
-			} else {
-				return BAD_VALUE;
-			}
-		}
-
-		if (s != 0) {
-			buf[i++] = s;
-			if (i >= sizeof(buf)) return BAD_VALUE;
-		}
-	}
-	if (p0 != end || !terminated_properly || escape) return BAD_VALUE;
-
-	size_t strsz = i+1;
-	if (strsz > l->strsz) {
-		l->strsz = strsz;
-		l->str = realloc(l->str, strsz);
-	}
-	memcpy(l->str, buf, i);
-	l->str[i] = 0;
-	*v = l->str;
-
 	return OK_VALUE;
 }
 
 static int load_postproc_enum(struct loader* l, postproc_enum* v)
 {
-	const char* s;
-	int r = load_str(l, &s);
+	if (arrlen(l->tokens) != 2) return BAD_VALUE;
+	char buf[1024];
+	int r = token_get_string(l, &l->tokens[1], buf, sizeof buf);
 	if (r == BAD_VALUE) return r;
-	#define ENUM(x) if (strcmp(s, #x) == 0) { *v = POSTPROC_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
+	#define ENUM(x) if (strcmp(buf, #x) == 0) { *v = POSTPROC_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
 	POSTPROC_ENUMS
 	#undef ENUM
 	return BAD_VALUE;
@@ -263,15 +366,15 @@ static int load_postproc_enum(struct loader* l, postproc_enum* v)
 
 static int load_toplvl_layout_enum(struct loader* l, toplvl_layout_enum* v)
 {
-	const char* s;
-	int r = load_str(l, &s);
+	if (arrlen(l->tokens) != 2) return BAD_VALUE;
+	char buf[1024];
+	int r = token_get_string(l, &l->tokens[1], buf, sizeof buf);
 	if (r == BAD_VALUE) return r;
-	#define ENUM(x) if (strcmp(s, #x) == 0) { *v = TOPLVL_LAYOUT_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
+	#define ENUM(x) if (strcmp(buf, #x) == 0) { *v = TOPLVL_LAYOUT_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
 	TOPLVL_LAYOUT_ENUMS
 	#undef ENUM
 	return BAD_VALUE;
 }
-
 
 static void states_set_defaults()
 {
@@ -290,14 +393,15 @@ static void preferences_set_defaults()
 static void report(int h, struct loader* l)
 {
 	if (h == OK_VALUE) return;
-	char buf[65536];
-	size_t n = l->k1 - l->k0;
-	if (n >= sizeof(buf)) {
-		printf("WARNING: big key (n=%zd)\n", n);
-		return;
+	char buf[1024];
+	snprintf(buf, sizeof buf, "???");
+	if (arrlen(l->tokens) >= 1 && l->tokens[0].t == TOKEN_SYMBOL) {
+		struct token* tok = &l->tokens[0];
+		if (tok->len < sizeof(buf)) {
+			memcpy(buf, l->ptr + tok->offset, tok->len);
+			buf[tok->len] = 0;
+		}
 	}
-	memcpy(buf, l->k0, n);
-	buf[n] = 0;
 	if (h == NO_VALUE) printf("WARNING: unhandled key: %s\n", buf);
 	if (h == BAD_VALUE) printf("WARNING: bad value for key %s\n", buf);
 }
@@ -342,7 +446,7 @@ static void load_colorscheme(struct colorscheme* cs, struct loader* l)
 {
 	for (; l->more; loader_next(l)) {
 		int h = NO_VALUE;
-		#define COLOR(NAME) load_v4(l, &cs->NAME);
+		#define COLOR(NAME) if (loader_key(l, #NAME)) h = load_v4(l, &cs->NAME);
 		COLORS
 		#undef COLOR
 		report(h, l);

@@ -71,7 +71,7 @@ struct preferences {
 };
 
 struct keymap {
-	#define ACTION(NAME) struct ui_keyseq NAME;
+	#define ACTION(NAME) struct ui_keyseq NAME[2];
 	ACTIONS
 	#undef ACTION
 };
