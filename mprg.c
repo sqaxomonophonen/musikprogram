@@ -205,11 +205,11 @@ static void handle_actions(struct window* window)
 	int action = -1;
 	int action_keyseqn = 0;
 	#define ACTION(NAME) \
-		if ((keymap.NAME[0].n > action_keyseqn && ui_keyseq(&keymap.NAME[0]))) { \
+		if (keymap.NAME[0].n > action_keyseqn && ui_keyseq(&keymap.NAME[0])) { \
 			action_keyseqn = keymap.NAME[0].n; \
 			action = ACTION_ ## NAME; \
 		} \
-		if ((keymap.NAME[1].n > action_keyseqn && ui_keyseq(&keymap.NAME[1]))) { \
+		if (keymap.NAME[1].n > action_keyseqn && ui_keyseq(&keymap.NAME[1])) { \
 			action_keyseqn = keymap.NAME[1].n; \
 			action = ACTION_ ## NAME; \
 		}
