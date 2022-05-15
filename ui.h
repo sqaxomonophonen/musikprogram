@@ -62,6 +62,7 @@ void ui_begin(struct ui_window* uw);
 void ui_end();
 void ui_pan(int dx, int dy);
 void ui_dim(int* w, int* h);
+int ui_flags();
 void ui_enter(int x, int y, int w, int h, int flags);
 void ui_leave();
 

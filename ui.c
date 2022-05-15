@@ -75,6 +75,11 @@ void ui_dim(int* w, int* h)
 	if (h) *h = u->regions[n-1].h;
 }
 
+int ui_flags()
+{
+	return get_flags();
+}
+
 void ui_pan(int dx, int dy)
 {
 	union v2 off = get_offset();
@@ -90,19 +95,26 @@ static void region_refresh()
 		r_offset(0,0);
 	} else {
 		assert(n_regions > 0);
-		struct rect abs_region = u->regions[0];
-		struct rect clip_rect = abs_region;
-		union v2 abs_offset = v2(abs_region.x, abs_region.y);
-		int flags = u->flags[0];
+		union v2 abs_offset = v2(0,0);
+		struct rect abs_region;
+		struct rect clip_rect;
+		int flags = 0;
 		int sticky_flags = 0;
-		for (int i = 1; i < n_regions; i++) {
+		for (int i = 0; i < n_regions; i++) {
 			struct rect r = u->regions[i];
 			abs_offset = v2_add(abs_offset, v2(r.x, r.y));
 			struct rect r2 = rect(abs_offset.x, abs_offset.y, r.w, r.h);
-			rect_intersection(&abs_region, &abs_region, &r2);
+			if (i == 0) {
+				abs_region = r2;
+				clip_rect = r2;
+			} else {
+				rect_intersection(&abs_region, &abs_region, &r2);
+			}
 			flags = u->flags[i];
 			if (flags & CLIP) rect_intersection(&clip_rect, &clip_rect, &r2);
-			if (flags & NO_INPUT) sticky_flags |= NO_INPUT;
+			if (flags & NO_INPUT) {
+				sticky_flags |= NO_INPUT;
+			}
 		}
 		r_offset(abs_offset.x, abs_offset.y);
 		r_clip(clip_rect.x, clip_rect.y, clip_rect.w, clip_rect.h);
@@ -120,8 +132,8 @@ void ui_enter(int x, int y, int w, int h, int flags)
 	assert(n >= 0);
 	assert((n < MAX_REGION_STACK_SIZE) && "too many regions");
 
-	u->flags[u->n_regions] = flags;
-	u->regions[u->n_regions] = rect(x,y,w,h);
+	u->flags[n] = flags;
+	u->regions[n] = rect(x,y,w,h);
 	u->n_regions++;
 
 	region_refresh();
@@ -197,6 +209,7 @@ union v2 ui_mpos()
 
 int ui_clicked(enum gpudl_button button)
 {
+	if (get_flags() & NO_INPUT) return 0;
 	struct rect* cr = get_region();
 	struct ui_window* uw = get_uw();
 	struct ui_mbtn* mb = &uw->mbtn[button];
@@ -205,6 +218,7 @@ int ui_clicked(enum gpudl_button button)
 
 int ui_down(enum gpudl_button button)
 {
+	if (get_flags() & NO_INPUT) return 0;
 	struct rect* cr = get_region();
 	struct ui_window* uw = get_uw();
 	struct ui_mbtn* mb = &uw->mbtn[button];

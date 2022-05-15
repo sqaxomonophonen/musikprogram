@@ -172,6 +172,11 @@ static void asset_pane_present(struct window* window, int right, float x)
 	r_end();
 }
 
+static int overlay_wants_focus(struct window* window)
+{
+	return !!window->overlay_assets;
+}
+
 static void overlay_present(struct window* window)
 {
 	int w,h;
@@ -262,11 +267,13 @@ static void window_present(struct window* window)
 
 	const int w = window->width;
 	const int h = window->height;
-	const int x1 = w/6; // XXX TODO layouting
+	const int x1 = w * states.toplvl_x_split;
 
-	ui_enter(0,0,w,h,CLIP);
-
+	ui_enter(0,0,w,h,0);
 	handle_actions(window);
+	ui_leave();
+
+	ui_enter(0,0,w,h, CLIP | (overlay_wants_focus(window) ? NO_INPUT : 0));
 
 	ui_enter(0, 0, x1, h, CLIP);
 	tracker_present(window);
@@ -276,10 +283,10 @@ static void window_present(struct window* window)
 	graph_present(window);
 	ui_leave();
 
-	ui_enter(0,0,w,h,CLIP);
-	overlay_present(window);
 	ui_leave();
 
+	ui_enter(0,0,w,h,CLIP);
+	overlay_present(window);
 	ui_leave();
 
 	ui_end();
