@@ -153,23 +153,61 @@ static void graph_present(struct window* window)
 	r_end();
 }
 
+static void asset_pane_present(struct window* window, int right, float x)
+{
+	const int pad0 = 16;
+	const int pad1 = 10;
+
+	int w,h;
+	ui_dim(&w,&h);
+	r_begin(R_MODE_TILE);
+	//const float s = 0.01f;
+	//rcol_plain(pma_alpha(s,s,s*1.5f,lerp(x, 0, 0.9)));
+	rcol_plain(pma_alpha(0,0,0, 0.9));
+	rt_quad(pad0,pad0,w-pad0*2,h-pad0*2);
+
+	rcol_plain(pma_alpha(0,0,0.4,1));
+	rt_quad(pad0+pad1,pad0+pad1,w-(pad0+pad1)*2,(pad0+pad1)*2);
+
+	r_end();
+}
+
 static void overlay_present(struct window* window)
 {
 	int w,h;
 	ui_dim(&w,&h);
-	toggle_set(&window->overlay_assets_toggle, window->overlay_assets);
-	float x = toggle_eval(&window->overlay_assets_toggle, preferences.transition_duration);
-	if (x > 0.0f) {
-		r_begin(R_MODE_TILE);
 
-		const float s = 0.01;
-		rcol_plain(pma_alpha(s,s,s,lerp(x, 0, 0.9)));
+	{ // assets
+		toggle_set(&window->overlay_assets_toggle, window->overlay_assets);
+		float x = toggle_eval(&window->overlay_assets_toggle, preferences.transition_duration);
+		if (x > 0.0f) {
+			const int w2 = w/2;
 
-		const float padding = 12;
+			int left_dx = 0;
+			int left_dy = 0;
+			int right_dx = 0;
+			int right_dy = 0;
 
-		rt_quad(padding,padding,w-padding*2,h-padding*2);
+			if (x < 1.0f) {
+				if (window->overlay_assets == 1) {
+					left_dy = (float)h * (1.0f-x);
+					right_dx = (float)w2 * (1.0f-x);
+				} else if (window->overlay_assets == 2) {
+					left_dx = (float)w2 * -(1.0f-x);
+					right_dy = (float)h * (1.0f-x);
+				} else {
+					left_dy = right_dy = (float)h * -(1.0f-x);
+				}
+			}
 
-		r_end();
+			ui_enter(0+left_dx,0+left_dy,w2,h,CLIP);
+			asset_pane_present(window, 0, x);
+			ui_leave();
+
+			ui_enter(w2+right_dx,0+right_dy,w2,h,CLIP);
+			asset_pane_present(window, 1, x);
+			ui_leave();
+		}
 	}
 }
 
