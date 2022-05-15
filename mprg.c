@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <assert.h>
 
 #include "stb_ds.h"
@@ -27,6 +28,12 @@ struct window_graph {
 	union v2 pan_anchor;
 };
 
+struct toggle {
+	int value;
+	uint64_t t0;
+	int animating;
+};
+
 struct window {
 	int id;
 	int width;
@@ -34,14 +41,41 @@ struct window {
 	struct postproc_window ppw;
 	struct ui_window uw;
 	struct window_graph graph;
-	int open_assets;
+	int overlay_assets;
+	struct toggle overlay_assets_toggle;
 };
 
 struct mprg {
 	int n_windows;
 	struct window windows[MAX_WINDOWS];
+	uint64_t ts;
 	int goto_next_postproc;
 } mprg;
+
+static void toggle_set(struct toggle* tgl, int value)
+{
+	value = !!value;
+	if (tgl->value != value) {
+		tgl->value = value;
+		tgl->t0 = mprg.ts;
+		tgl->animating = 1;
+	}
+}
+
+static float toggle_eval(struct toggle* tgl, float duration)
+{
+	if (!tgl->animating) {
+		return tgl->value ? 1.0f : 0.0f;
+	} else {
+		float x = stm_sec(stm_diff(mprg.ts, tgl->t0)) / duration;
+		if (x >= 1.0f) {
+			tgl->animating = 0;
+			return tgl->value ? 1.0f : 0.0f;
+		}
+		if (x < 0.0f) x = 0.0f;
+		return tgl->value ? x : 1.0f - x;
+	}
+}
 
 static void new_window()
 {
@@ -121,6 +155,22 @@ static void graph_present(struct window* window)
 
 static void overlay_present(struct window* window)
 {
+	int w,h;
+	ui_dim(&w,&h);
+	toggle_set(&window->overlay_assets_toggle, window->overlay_assets);
+	float x = toggle_eval(&window->overlay_assets_toggle, preferences.transition_duration);
+	if (x > 0.0f) {
+		r_begin(R_MODE_TILE);
+
+		const float s = 0.01;
+		rcol_plain(pma_alpha(s,s,s,lerp(x, 0, 0.9)));
+
+		const float padding = 12;
+
+		rt_quad(padding,padding,w-padding*2,h-padding*2);
+
+		r_end();
+	}
 }
 
 static void execute_action(struct window* window, enum action action)
@@ -133,10 +183,18 @@ static void execute_action(struct window* window, enum action action)
 		printf("TODO next colorscheme\n");
 		break;
 	case ACTION_open_assets_left:
-		window->open_assets = 1;
+		if (window->overlay_assets) {
+			window->overlay_assets = 0; // XXX no
+		} else {
+			window->overlay_assets = 1;
+		}
 		break;
 	case ACTION_open_assets_right:
-		window->open_assets = 2;
+		if (window->overlay_assets) {
+			window->overlay_assets = 0; // XXX no
+		} else {
+			window->overlay_assets = 2;
+		}
 		break;
 	case ACTION_END: assert(!"XXX");
 	}
@@ -144,9 +202,20 @@ static void execute_action(struct window* window, enum action action)
 
 static void handle_actions(struct window* window)
 {
-	#define ACTION(NAME) if ((keymap.NAME[0].n > 0 && ui_keyseq(&keymap.NAME[0])) || (keymap.NAME[1].n > 0 && ui_keyseq(&keymap.NAME[1]))) execute_action(window, ACTION_ ## NAME);
+	int action = -1;
+	int action_keyseqn = 0;
+	#define ACTION(NAME) \
+		if ((keymap.NAME[0].n > action_keyseqn && ui_keyseq(&keymap.NAME[0]))) { \
+			action_keyseqn = keymap.NAME[0].n; \
+			action = ACTION_ ## NAME; \
+		} \
+		if ((keymap.NAME[1].n > action_keyseqn && ui_keyseq(&keymap.NAME[1]))) { \
+			action_keyseqn = keymap.NAME[1].n; \
+			action = ACTION_ ## NAME; \
+		}
 	ACTIONS
 	#undef ACTION
+	if (action >= 0) execute_action(window, action);
 }
 
 static void window_present(struct window* window)
@@ -214,6 +283,7 @@ int main(int argc, char** argv)
 
 	int iteration = 0;
 	while (mprg.n_windows > 0) {
+		mprg.ts = stm_now();
 		int on_battery = PWR_on_battery(&pwr);
 
 		struct gpudl_event e;

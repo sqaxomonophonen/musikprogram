@@ -148,6 +148,7 @@ static int parse_string(const char* p0, const char** p1, char* buf, size_t bufsz
 			case 'n':  s='\n'; break;
 			case 'r':  s='\r'; break;
 			case 't':  s='\t'; break;
+			case 'b':  s='\b'; break;
 			case 'x':  hexscape++; break;
 			default:   err=1; break;
 			}
