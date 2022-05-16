@@ -16,6 +16,7 @@
 #define TODO assert(!"TODO");
 
 static inline float lerp(float t, float a, float b) { return a + t*(b-a); }
+static inline float clamp(float x, float min, float max) { return x < min ? min : x > max ? max : x; }
 
 union v2 {
 	float s[2];

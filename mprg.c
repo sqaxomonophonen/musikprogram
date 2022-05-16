@@ -194,12 +194,16 @@ static void overlay_present(struct window* window)
 			int right_dy = 0;
 
 			if (x < 1.0f) {
+				const float dur = 0.55f;
+				const float idur = 1.0f / dur;
+				const float x0 = clamp(x*idur,0,1);
+				const float x1 = clamp(x*idur - (idur-1.0f),0,1);
 				if (window->overlay_assets == 1) {
-					left_dy = (float)h * (1.0f-x);
-					right_dx = (float)w2 * (1.0f-x);
+					left_dy = (float)h * (1.0f-x0);
+					right_dx = (float)w2 * (1.0f-x1);
 				} else if (window->overlay_assets == 2) {
-					left_dx = (float)w2 * -(1.0f-x);
-					right_dy = (float)h * (1.0f-x);
+					left_dx = (float)w2 * -(1.0f-x1);
+					right_dy = (float)h * (1.0f-x0);
 				} else {
 					left_dy = right_dy = (float)h * -(1.0f-x);
 				}
