@@ -43,7 +43,7 @@ typedef enum {
 #define PREFERENCE_FIELDS \
 	FIELD( font_mono_size,          int,      24          ) \
 	FIELD( font_variable_size,      int,      24          ) \
-	FIELD( transition_duration,     float,    0.05        )
+	FIELD( transition_duration,     float,    0.15        )
 
 #define SCOPE_TOP      (1<<0)
 #define SCOPE_UNDERLAY (1<<1)
