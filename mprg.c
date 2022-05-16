@@ -487,5 +487,7 @@ int main(int argc, char** argv)
 		}
 	}
 
+	prefs_save();
+
 	return EXIT_SUCCESS;
 }

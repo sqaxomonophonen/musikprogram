@@ -97,6 +97,7 @@ extern struct keymap keymap;
 extern struct colorscheme colorscheme;
 
 void prefs_init();
+void prefs_save();
 
 #define PREFS_H
 #endif

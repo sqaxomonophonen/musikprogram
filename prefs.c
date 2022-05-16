@@ -443,9 +443,12 @@ static void report(int h, struct loader* l)
 	if (h == BAD_VALUE) printf("WARNING: bad value for key %s\n", buf);
 }
 
+static const char* STATES_PATH = "!mprg/states";
+static const char* PREFERENCES_PATH = "!mprg/preferences";
+
 static void states_load()
 {
-	for (struct loader l = file_loader("!mprg/states"); l.more; loader_next(&l)) {
+	for (struct loader l = file_loader(STATES_PATH); l.more; loader_next(&l)) {
 		int h = NO_VALUE;
 		#define FIELD(NAME,TYPE,DEFAULT) if (loader_key(&l, #NAME)) h = load_##TYPE(&l, &states.NAME);
 		STATE_FIELDS
@@ -456,7 +459,7 @@ static void states_load()
 
 static void preferences_load()
 {
-	for (struct loader l = file_loader("!mprg/preferences"); l.more; loader_next(&l)) {
+	for (struct loader l = file_loader(PREFERENCES_PATH); l.more; loader_next(&l)) {
 		int h = NO_VALUE;
 		#define FIELD(NAME,TYPE,DEFAULT) if (loader_key(&l, #NAME)) h = load_##TYPE(&l, &preferences.NAME);
 		PREFERENCE_FIELDS
@@ -507,4 +510,11 @@ void prefs_init()
 	preferences_load();
 	keymap_set_defaults();
 	colorscheme_set_defaults();
+}
+
+void prefs_save()
+{
+	// TODO
+	//  - should I write config files from scratch, or instead attempt to
+	//    patch in changes? (keeping custom stuff as-is)
 }
