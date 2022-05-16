@@ -1,4 +1,4 @@
 next_postproc "p"
 next_colorscheme "c"
-open_assets_left "/" "*OR*" "LSHIFT" "/"
-open_assets_right "RSHIFT" "/"
+open_assets_left "LALT" " "
+open_assets_right "RALT" " "
