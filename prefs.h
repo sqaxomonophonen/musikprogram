@@ -45,12 +45,14 @@ typedef enum {
 	FIELD( font_variable_size,      int,      24          ) \
 	FIELD( transition_duration,     float,    0.05        )
 
+#define SCOPE_TOP      (1<<0)
+#define SCOPE_UNDERLAY (1<<1)
 
 #define ACTIONS \
-	ACTION( next_postproc ) \
-	ACTION( next_colorscheme ) \
-	ACTION( open_assets_left ) \
-	ACTION( open_assets_right )
+	ACTION( next_postproc,         SCOPE_TOP          ) \
+	ACTION( next_colorscheme,      SCOPE_TOP          ) \
+	ACTION( open_assets_left,      SCOPE_UNDERLAY     ) \
+	ACTION( open_assets_right,     SCOPE_UNDERLAY     )
 
 
 #define COLORS \
@@ -71,14 +73,14 @@ struct preferences {
 };
 
 enum action {
-	#define ACTION(NAME) ACTION_ ## NAME,
+	#define ACTION(NAME,SCOPE) ACTION_ ## NAME,
 	ACTIONS
 	#undef ACTION
 	ACTION_END
 };
 
 struct keymap {
-	#define ACTION(NAME) struct ui_keyseq NAME[2];
+	#define ACTION(NAME,SCOPE) struct ui_keyseq NAME[2];
 	ACTIONS
 	#undef ACTION
 };

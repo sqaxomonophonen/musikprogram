@@ -216,6 +216,12 @@ static void overlay_present(struct window* window)
 			ui_enter(w2+right_dx,0+right_dy,w2,h,CLIP);
 			asset_pane_present(window, 1, x);
 			ui_leave();
+
+			if (ui_key('\b')) {
+				// XXX mock up, but it should probably be the
+				// input field that does this?
+				window->overlay_assets = 0;
+			}
 		}
 	}
 }
@@ -247,18 +253,20 @@ static void execute_action(struct window* window, enum action action)
 	}
 }
 
-static void handle_actions(struct window* window)
+static void handle_actions(struct window* window, int scope_flags)
 {
 	int action = -1;
 	int action_keyseqn = 0;
-	#define ACTION(NAME) \
-		if (keymap.NAME[0].n > action_keyseqn && ui_keyseq(&keymap.NAME[0])) { \
-			action_keyseqn = keymap.NAME[0].n; \
-			action = ACTION_ ## NAME; \
-		} \
-		if (keymap.NAME[1].n > action_keyseqn && ui_keyseq(&keymap.NAME[1])) { \
-			action_keyseqn = keymap.NAME[1].n; \
-			action = ACTION_ ## NAME; \
+	#define ACTION(NAME,SCOPE) \
+		if ((SCOPE) & scope_flags) { \
+			if (keymap.NAME[0].n > action_keyseqn && ui_keyseq(&keymap.NAME[0])) { \
+				action_keyseqn = keymap.NAME[0].n; \
+				action = ACTION_ ## NAME; \
+			} \
+			if (keymap.NAME[1].n > action_keyseqn && ui_keyseq(&keymap.NAME[1])) { \
+				action_keyseqn = keymap.NAME[1].n; \
+				action = ACTION_ ## NAME; \
+			} \
 		}
 	ACTIONS
 	#undef ACTION
@@ -274,10 +282,12 @@ static void window_present(struct window* window)
 	const int x1 = w * states.toplvl_x_split;
 
 	ui_enter(0,0,w,h,0);
-	handle_actions(window);
+	handle_actions(window, SCOPE_TOP);
 	ui_leave();
 
 	ui_enter(0,0,w,h, CLIP | (overlay_wants_focus(window) ? NO_INPUT : 0));
+
+	handle_actions(window, SCOPE_UNDERLAY);
 
 	ui_enter(0, 0, x1, h, CLIP);
 	tracker_present(window);

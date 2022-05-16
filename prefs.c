@@ -469,7 +469,7 @@ static void load_keymap(struct keymap* km, struct loader* l)
 {
 	for (; l->more; loader_next(l)) {
 		int h = NO_VALUE;
-		#define ACTION(NAME) if (loader_key(l, #NAME)) h = load_keyseq2(l, &km->NAME[0]);
+		#define ACTION(NAME,SCOPE) if (loader_key(l, #NAME)) h = load_keyseq2(l, &km->NAME[0]);
 		ACTIONS
 		#undef ACTION
 		report(h, l);
