@@ -161,9 +161,9 @@ static void asset_pane_present(struct window* window, int right, float x)
 	int w,h;
 	ui_dim(&w,&h);
 	r_begin(R_MODE_TILE);
-	//const float s = 0.01f;
+	const float s = 0.03f;
 	//rcol_plain(pma_alpha(s,s,s*1.5f,lerp(x, 0, 0.9)));
-	rcol_plain(pma_alpha(0,0,0, 0.9));
+	rcol_plain(pma_alpha(s,s,s, 0.9));
 	rt_quad(pad0,pad0,w-pad0*2,h-pad0*2);
 
 	rcol_plain(pma_alpha(0,0,0.4,1));
@@ -205,7 +205,7 @@ static void overlay_present(struct window* window)
 					left_dx = (float)w2 * -(1.0f-x1);
 					right_dy = (float)h * (1.0f-x0);
 				} else {
-					left_dy = right_dy = (float)h * -(1.0f-x);
+					left_dy = right_dy = (float)h * -(1.0f-x0);
 				}
 			}
 
@@ -270,7 +270,10 @@ static void handle_actions(struct window* window, int scope_flags)
 		}
 	ACTIONS
 	#undef ACTION
-	if (action >= 0) execute_action(window, action);
+	if (action >= 0) {
+		execute_action(window, action);
+		ui_keyclear();
+	}
 }
 
 static void window_present(struct window* window)

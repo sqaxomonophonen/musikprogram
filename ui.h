@@ -71,6 +71,7 @@ int ui_key(int code);
 int ui_keyseq2(int code0, int code1);
 int ui_keyseq3(int code0, int code1, int code2);
 int ui_keyseq4(int code0, int code1, int code2, int code3);
+void ui_keyclear();
 int ui_read(); // next text-input codepoint or 0 when buffer is empty
 
 union v2 ui_mpos();

@@ -12,6 +12,8 @@ struct uistate {
 	int flags[MAX_REGION_STACK_SIZE];
 	struct ui_window* uw;
 
+	int keyclear;
+
 	// derived
 	union v2 current_offset;
 	struct rect current_region;
@@ -132,6 +134,8 @@ void ui_enter(int x, int y, int w, int h, int flags)
 	assert(n >= 0);
 	assert((n < MAX_REGION_STACK_SIZE) && "too many regions");
 
+	if (n == 0) u->keyclear = 0;
+
 	u->flags[n] = flags;
 	u->regions[n] = rect(x,y,w,h);
 	u->n_regions++;
@@ -157,8 +161,7 @@ static int has_keyboard_focus()
 
 int ui_keyseq(struct ui_keyseq* keyseq)
 {
-	if (!has_keyboard_focus()) return 0;
-	if (keyseq->n == 0) return 0;
+	if (!has_keyboard_focus() || keyseq->n == 0 || uistate.keyclear) return 0;
 	struct ui_window* uw = get_uw();
 	int last_serial = 0;
 	for (int i = 0; i < keyseq->n; i++) {
@@ -170,6 +173,11 @@ int ui_keyseq(struct ui_keyseq* keyseq)
 		if (i == keyseq->n-1 && !key->pressed) return 0;
 	}
 	return 1;
+}
+
+void ui_keyclear()
+{
+	uistate.keyclear = 1;
 }
 
 int ui_key(int code)
@@ -194,7 +202,7 @@ int ui_keyseq4(int code0, int code1, int code2, int code3)
 
 int ui_read()
 {
-	if (!has_keyboard_focus()) return 0;
+	if (!has_keyboard_focus() || uistate.keyclear) return 0;
 	struct ui_window* uw = get_uw();
 	if (0 <= uw->codepoint_cursor && uw->codepoint_cursor < uw->n_codepoints) {
 		return uw->codepoints[uw->codepoint_cursor++];
