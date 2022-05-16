@@ -217,7 +217,7 @@ static void overlay_present(struct window* window)
 			asset_pane_present(window, 1, x);
 			ui_leave();
 
-			if (ui_key('\b') || ui_key('\033')) {
+			if (ui_key('\b') || ui_key('\033') || ui_key('\r')) {
 				// XXX mock up; should probably be the input
 				// field that does this?
 				window->overlay_assets = 0;
