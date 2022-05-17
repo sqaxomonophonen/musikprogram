@@ -237,6 +237,12 @@ static int has_keyboard_focus()
 
 int ui_keyseq(struct ui_keyseq* keyseq)
 {
+	// FIXME FIXME this is somewhat broken... it matches a _sequence_, so
+	// LCTRL,LSHIFT,ESC is different from LSHIFT,LCTRL,ESC; modifiers
+	// should be treated as a mask, and I don't think it makes sense to
+	// have more than one non-modifer key? so, modifier + key. it should
+	// also be possible to match SHIFT instead of specifically LSHIFT or
+	// RSHIFT.
 	if (!has_keyboard_focus() || keyseq->n == 0 || uistate.keyclear) return 0;
 	struct ui_window* uw = get_uw();
 	int last_serial = 0;
