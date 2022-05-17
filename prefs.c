@@ -126,7 +126,6 @@ static int parse_string(const char* p0, const char** p1, char* buf, size_t bufsz
 		char c = *(p0++);
 		char s = 0;
 		if (hexscape) {
-			assert(escape);
 			int hd = hex_digit(c);
 			if (hd < 0) break;
 			assert(0 <= hd && hd < 16);
@@ -140,6 +139,7 @@ static int parse_string(const char* p0, const char** p1, char* buf, size_t bufsz
 				assert(!"unreachable");
 			}
 		} else if (escape) {
+			escape = 0;
 			assert(hexscape == 0);
 			int err = 0;
 			switch (c) {
