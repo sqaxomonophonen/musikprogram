@@ -98,6 +98,12 @@ int ui_flags()
 	return get_flags();
 }
 
+int ui_focused()
+{
+	const int group = get_group();
+	return group == 0 ? 1 : (group == uistate.uw->focused_group);
+}
+
 void ui_pan(int dx, int dy)
 {
 	union v2 off = get_offset();

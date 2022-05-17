@@ -64,6 +64,7 @@ void ui_end();
 void ui_pan(int dx, int dy);
 void ui_dim(int* w, int* h);
 int ui_flags();
+int ui_focused();
 void ui_enter(int x, int y, int w, int h, int flags);
 void ui_enter_group(int x, int y, int w, int h, int flags, int* group);
 void ui_leave();

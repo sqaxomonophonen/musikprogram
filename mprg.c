@@ -278,6 +278,16 @@ static void handle_actions(struct window* window, int scope_flags)
 	}
 }
 
+static void bleb()
+{
+	r_begin(R_MODE_TILE);
+	rcol_plain(ui_focused()
+		? pma_alpha(0,1,0,0.5)
+		: pma_alpha(1,0,0,0.5));
+	rt_quad(10, 10, 10, 10);
+	r_end();
+}
+
 static void window_present(struct window* window)
 {
 	ui_begin(&window->uw);
@@ -299,11 +309,13 @@ static void window_present(struct window* window)
 	ui_enter_group(0, 0, x1, h, CLIP, &window->grp_tracker);
 	tracker_present(window);
 	while ((c = ui_read()) != 0) printf("TRACKER TEXT %c\n", c);
+	bleb();
 	ui_leave();
 
 	ui_enter_group(x1, 0, w-x1, h, CLIP, &window->grp_graph);
 	graph_present(window);
 	while ((c = ui_read()) != 0) printf("GRAPH TEXT %c\n", c);
+	bleb();
 	ui_leave();
 
 	ui_leave();
