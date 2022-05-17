@@ -185,11 +185,7 @@ void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 {
 	struct uistate* u = &uistate;
 
-	if (group) {
-		if (*group == 0) *group = ++u->group_serial;
-		if (u->uw->focused_group == 0) u->uw->focused_group = *group;
-		arrput(u->seen_groups, *group);
-	}
+	if (group && *group == 0) *group = ++u->group_serial;
 
 	const int n = u->n_regions;
 	assert(n >= 0);
@@ -205,7 +201,9 @@ void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 
 	region_refresh();
 
-	if (group) {
+	if (group && !(get_flags() & NO_INPUT)) {
+		if (u->uw->focused_group == 0) u->uw->focused_group = *group;
+		arrput(u->seen_groups, *group);
 		struct rect* cr = get_region();
 		if (rect_contains(cr, &u->uw->mpos) && !rect_contains(cr, &u->uw->last_mpos)) {
 			u->uw->focused_group = *group;

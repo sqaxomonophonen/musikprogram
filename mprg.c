@@ -43,8 +43,7 @@ struct window {
 	struct window_graph graph;
 	int overlay_assets;
 	struct toggle overlay_assets_toggle;
-	int grp_tracker;
-	int grp_graph;
+	int grp_tracker, grp_graph, grp_assets_left, grp_assets_right;
 	int goto_next_focus;
 };
 
@@ -180,6 +179,18 @@ static int overlay_wants_focus(struct window* window)
 	return !!window->overlay_assets;
 }
 
+static void focus_blurp(const char* what, float offset)
+{
+	int c;
+	while ((c = ui_read()) != 0) printf("%s TEXT %c\n", what, c);
+	r_begin(R_MODE_TILE);
+	rcol_plain(ui_focused()
+		? pma_alpha(0,4,0,0.5)
+		: pma_alpha(4,0,0,0.5));
+	rt_quad(offset, offset, 10, 10);
+	r_end();
+}
+
 static void overlay_present(struct window* window)
 {
 	int w,h;
@@ -212,13 +223,21 @@ static void overlay_present(struct window* window)
 				}
 			}
 
-			ui_enter(0+left_dx,0+left_dy,w2,h,CLIP);
-			asset_pane_present(window, 0, x);
-			ui_leave();
-
-			ui_enter(w2+right_dx,0+right_dy,w2,h,CLIP);
-			asset_pane_present(window, 1, x);
-			ui_leave();
+			// first group entered gets new focus; using this
+			// "hack" to allow left/right initial focus
+			// (ACTION_open_assets_left vs
+			// ACTION_open_assets_right)
+			for (int i = 0; i < 2; i++) {
+				const int ii = window->overlay_assets == 1 ? i : 1-i;
+				if (ii == 0) {
+					ui_enter_group(0+left_dx,0+left_dy,w2,h,CLIP,&window->grp_assets_left);
+				} else {
+					ui_enter_group(w2+right_dx,0+right_dy,w2,h,CLIP,&window->grp_assets_right);
+				}
+				asset_pane_present(window, ii, x);
+				focus_blurp(ii == 0 ? "ASSETS LEFT" : "ASSETS RIGHT", 30);
+				ui_leave();
+			}
 
 			if (ui_key('\b') || ui_key('\033') || ui_key('\r')) {
 				// XXX mock up; should probably be the input
@@ -282,16 +301,6 @@ static void handle_actions(struct window* window, int scope_flags)
 	}
 }
 
-static void show_focus_blurp()
-{
-	r_begin(R_MODE_TILE);
-	rcol_plain(ui_focused()
-		? pma_alpha(0,4,0,0.5)
-		: pma_alpha(4,0,0,0.5));
-	rt_quad(10, 10, 10, 10);
-	r_end();
-}
-
 static void window_present(struct window* window)
 {
 	ui_begin(&window->uw);
@@ -317,14 +326,13 @@ static void window_present(struct window* window)
 
 	ui_enter_group(0, 0, x1, h, CLIP, &window->grp_tracker);
 	tracker_present(window);
-	while ((c = ui_read()) != 0) printf("TRACKER TEXT %c\n", c);
-	show_focus_blurp();
+	focus_blurp("TRACKER", 10);
 	ui_leave();
 
 	ui_enter_group(x1, 0, w-x1, h, CLIP, &window->grp_graph);
 	graph_present(window);
 	while ((c = ui_read()) != 0) printf("GRAPH TEXT %c\n", c);
-	show_focus_blurp();
+	focus_blurp("GRAPH", 10);
 	ui_leave();
 
 	ui_leave();
