@@ -19,7 +19,6 @@ struct uistate {
 	int keyclear;
 
 	int group_serial;
-	int keep_focused_group;
 	int* seen_groups;
 
 	// derived
@@ -36,7 +35,6 @@ void ui_begin(struct ui_window* uw)
 	assert((u->uw == NULL) && "already inside ui_begin()");
 	u->uw = uw;
 	uw->codepoint_cursor = 0;
-	u->keep_focused_group = 0;
 	arrsetlen(u->seen_groups, 0);
 }
 
@@ -56,16 +54,18 @@ void ui_end()
 	for (int i = 0; i < GPUDL_BUTTON_END; i++) uw->mbtn[i].clicked = 0;
 	for (int i = 0; i < GK_SPECIAL_END; i++) uw->key[i].pressed = 0;
 	uw->n_codepoints = 0;
-	if (!u->keep_focused_group) uw->focused_group = 0;
 	int lowest_group = -1;
 	int next_group = -1;
+	int seen = 0;
 	for (int i = 0; i < arrlen(u->seen_groups); i++) {
 		const int g = u->seen_groups[i];
+		if (g == uw->focused_group) seen = 1;
 		if (lowest_group == -1 || g < lowest_group) lowest_group = g;
 		if (g > uw->focused_group) {
 			if (next_group == -1 || g < next_group) next_group = g;
 		}
 	}
+	if (!seen) uw->focused_group = 0;
 	if (next_group != -1) {
 		uw->next_focus_group = next_group;
 	} else if (lowest_group != -1) {
@@ -188,7 +188,6 @@ void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 	if (group) {
 		if (*group == 0) *group = ++u->group_serial;
 		if (u->uw->focused_group == 0) u->uw->focused_group = *group;
-		if (u->uw->focused_group == *group) u->keep_focused_group = 1;
 		arrput(u->seen_groups, *group);
 	}
 
