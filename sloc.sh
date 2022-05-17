@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-FULL=$1
+ARG=$1
 
 sloc() {
-	if [ "$FULL" = "1" ] ; then
+	if [ "$ARG" = "1" ] ; then
 		xargs wc -l | grep -v " total$"
 	else
 		echo -ne "$1:\t"
@@ -12,5 +12,10 @@ sloc() {
 }
 
 git ls-files '*.c' | sloc ".c"
-git ls-files '*.h' | grep -vF "stb_" | grep -vF "webgpu.h" | grep -vF "gpudl.h" | grep -vF "sokol_" | sloc ".h"
+if [ "$ARG" = "" ] ; then
+	# exclude "external deps"
+	git ls-files '*.h' | grep -vF "stb_" | grep -vF "webgpu.h" | grep -vF "gpudl.h" | grep -vF "sokol_" | sloc ".h"
+else
+	git ls-files '*.h' | sloc ".h"
+fi
 git ls-files '*.wgsl' | sloc ".wgsl"
