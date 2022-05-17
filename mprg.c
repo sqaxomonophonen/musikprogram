@@ -191,6 +191,18 @@ static void focus_blurp(const char* what, float offset)
 	r_end();
 }
 
+static float curve_in_sin(float x)
+{
+	if (x < 0.0f) return 0.0f;
+	if (x > 1.0f) return 1.0f;
+	return sin(x*PI*0.5f);
+}
+
+static float curve_out_sin(float x)
+{
+	return 1.0f - curve_in_sin(1.0f - x);
+}
+
 static void overlay_present(struct window* window)
 {
 	int w,h;
@@ -210,8 +222,8 @@ static void overlay_present(struct window* window)
 			if (x < 1.0f) {
 				const float dur = 0.55f;
 				const float idur = 1.0f / dur;
-				const float x0 = clamp(x*idur,0,1);
-				const float x1 = clamp(x*idur - (idur-1.0f),0,1);
+				const float x0 = curve_in_sin(clamp(x*idur,0,1));
+				const float x1 = curve_in_sin(clamp(x*idur - (idur-1.0f),0,1));
 				if (window->overlay_assets == 1) {
 					left_dy = (float)h * (1.0f-x0);
 					right_dx = (float)w2 * (1.0f-x1);
