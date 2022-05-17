@@ -43,6 +43,8 @@ struct window {
 	struct window_graph graph;
 	int overlay_assets;
 	struct toggle overlay_assets_toggle;
+	int grp_tracker;
+	int grp_graph;
 };
 
 struct mprg {
@@ -292,11 +294,11 @@ static void window_present(struct window* window)
 
 	handle_actions(window, SCOPE_UNDERLAY);
 
-	ui_enter(0, 0, x1, h, CLIP);
+	ui_enter_group(0, 0, x1, h, CLIP, &window->grp_tracker);
 	tracker_present(window);
 	ui_leave();
 
-	ui_enter(x1, 0, w-x1, h, CLIP);
+	ui_enter_group(x1, 0, w-x1, h, CLIP, &window->grp_graph);
 	graph_present(window);
 	ui_leave();
 

@@ -1,4 +1,4 @@
-next_postproc "p"
-next_colorscheme "c"
+next_postproc "F12"
+next_colorscheme "F11"
 open_assets_left "LALT" " "
 open_assets_right "RALT" " "

@@ -10,14 +10,20 @@ struct uistate {
 	int n_regions;
 	struct rect regions[MAX_REGION_STACK_SIZE];
 	int flags[MAX_REGION_STACK_SIZE];
+	int groups[MAX_REGION_STACK_SIZE];
 	struct ui_window* uw;
 
 	int keyclear;
+
+	int group_serial;
+	int keep_focused_group;
 
 	// derived
 	union v2 current_offset;
 	struct rect current_region;
 	int current_flags;
+	int current_group;
+
 } uistate;
 
 void ui_begin(struct ui_window* uw)
@@ -26,6 +32,7 @@ void ui_begin(struct ui_window* uw)
 	assert((u->uw == NULL) && "already inside ui_begin()");
 	u->uw = uw;
 	uw->codepoint_cursor = 0;
+	u->keep_focused_group = 0;
 }
 
 static struct ui_window* get_uw()
@@ -44,6 +51,7 @@ void ui_end()
 	for (int i = 0; i < GPUDL_BUTTON_END; i++) uw->mbtn[i].clicked = 0;
 	for (int i = 0; i < GK_SPECIAL_END; i++) uw->key[i].pressed = 0;
 	uw->n_codepoints = 0;
+	if (!u->keep_focused_group) uw->focused_group = 0;
 	u->uw = NULL;
 }
 
@@ -66,6 +74,13 @@ static int get_flags()
 	struct uistate* u = &uistate;
 	assert((u->n_regions > 0) && "no region");
 	return u->current_flags;
+}
+
+static int get_group()
+{
+	struct uistate* u = &uistate;
+	assert((u->n_regions > 0) && "no region");
+	return u->current_group;
 }
 
 void ui_dim(int* w, int* h)
@@ -102,6 +117,7 @@ static void region_refresh()
 		struct rect clip_rect;
 		int flags = 0;
 		int sticky_flags = 0;
+		int group = 0;
 		for (int i = 0; i < n_regions; i++) {
 			struct rect r = u->regions[i];
 			abs_offset = v2_add(abs_offset, v2(r.x, r.y));
@@ -117,19 +133,29 @@ static void region_refresh()
 			if (flags & NO_INPUT) {
 				sticky_flags |= NO_INPUT;
 			}
+			const int g = u->groups[i];
+			if (g > 0) group = g;
 		}
 		r_offset(abs_offset.x, abs_offset.y);
 		r_clip(clip_rect.x, clip_rect.y, clip_rect.w, clip_rect.h);
 		u->current_offset = abs_offset;
 		u->current_region = abs_region;
 		u->current_flags = flags | sticky_flags;
+		u->current_group = group;
 		ui_pan(0,0);
 	}
 }
 
-void ui_enter(int x, int y, int w, int h, int flags)
+void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 {
 	struct uistate* u = &uistate;
+
+	if (group) {
+		if (*group == 0) *group = ++u->group_serial;
+		if (u->uw->focused_group == 0) u->uw->focused_group = *group;
+		if (u->uw->focused_group == *group) u->keep_focused_group = 1;
+	}
+
 	const int n = u->n_regions;
 	assert(n >= 0);
 	assert((n < MAX_REGION_STACK_SIZE) && "too many regions");
@@ -138,9 +164,16 @@ void ui_enter(int x, int y, int w, int h, int flags)
 
 	u->flags[n] = flags;
 	u->regions[n] = rect(x,y,w,h);
+	u->groups[n] = group ? *group : 0;
+
 	u->n_regions++;
 
 	region_refresh();
+}
+
+void ui_enter(int x, int y, int w, int h, int flags)
+{
+	ui_enter_group(x,y,w,h,flags,NULL);
 }
 
 void ui_leave()
@@ -155,8 +188,9 @@ static int has_keyboard_focus()
 {
 	const int flags = get_flags();
 	if (flags & NO_INPUT) return 0;
-	// TODO proper focus?
-	return 1;
+	const int group = get_group();
+	if (group == 0) return 1;
+	return group == uistate.uw->focused_group;
 }
 
 int ui_keyseq(struct ui_keyseq* keyseq)
