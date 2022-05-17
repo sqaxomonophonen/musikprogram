@@ -294,12 +294,16 @@ static void window_present(struct window* window)
 
 	handle_actions(window, SCOPE_UNDERLAY);
 
+	int c;
+
 	ui_enter_group(0, 0, x1, h, CLIP, &window->grp_tracker);
 	tracker_present(window);
+	while ((c = ui_read()) != 0) printf("TRACKER TEXT %c\n", c);
 	ui_leave();
 
 	ui_enter_group(x1, 0, w-x1, h, CLIP, &window->grp_graph);
 	graph_present(window);
+	while ((c = ui_read()) != 0) printf("GRAPH TEXT %c\n", c);
 	ui_leave();
 
 	ui_leave();

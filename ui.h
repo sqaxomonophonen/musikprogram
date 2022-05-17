@@ -22,7 +22,7 @@ struct ui_key {
 #define UI_CODEPOINTS_MAX (32)
 
 struct ui_window {
-	union v2 mpos;
+	union v2 mpos, last_mpos;
 	struct ui_mbtn mbtn[GPUDL_BUTTON_END];
 	struct ui_key key[GK_SPECIAL_END];
 	int serial;

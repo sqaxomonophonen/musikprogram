@@ -52,6 +52,7 @@ void ui_end()
 	for (int i = 0; i < GK_SPECIAL_END; i++) uw->key[i].pressed = 0;
 	uw->n_codepoints = 0;
 	if (!u->keep_focused_group) uw->focused_group = 0;
+	uw->last_mpos = uw->mpos;
 	u->uw = NULL;
 }
 
@@ -169,6 +170,13 @@ void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 	u->n_regions++;
 
 	region_refresh();
+
+	if (group) {
+		struct rect* cr = get_region();
+		if (rect_contains(cr, &u->uw->mpos) && !rect_contains(cr, &u->uw->last_mpos)) {
+			u->uw->focused_group = *group;
+		}
+	}
 }
 
 void ui_enter(int x, int y, int w, int h, int flags)
