@@ -51,6 +51,7 @@ typedef enum {
 #define ACTIONS \
 	ACTION( next_postproc,         SCOPE_TOP          ) \
 	ACTION( next_colorscheme,      SCOPE_TOP          ) \
+	ACTION( next_focus,            SCOPE_TOP          ) \
 	ACTION( open_assets_left,      SCOPE_UNDERLAY     ) \
 	ACTION( open_assets_right,     SCOPE_UNDERLAY     )
 

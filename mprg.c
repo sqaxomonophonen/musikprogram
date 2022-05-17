@@ -45,6 +45,7 @@ struct window {
 	struct toggle overlay_assets_toggle;
 	int grp_tracker;
 	int grp_graph;
+	int goto_next_focus;
 };
 
 struct mprg {
@@ -237,6 +238,9 @@ static void execute_action(struct window* window, enum action action)
 	case ACTION_next_colorscheme:
 		printf("TODO next colorscheme\n");
 		break;
+	case ACTION_next_focus:
+		window->goto_next_focus = 1;
+		break;
 	case ACTION_open_assets_left:
 		if (window->overlay_assets) {
 			window->overlay_assets = 0; // XXX no
@@ -299,6 +303,11 @@ static void window_present(struct window* window)
 	ui_enter(0,0,w,h,0);
 	handle_actions(window, SCOPE_TOP);
 	ui_leave();
+
+	if (window->goto_next_focus) {
+		ui_goto_next_focus();
+		window->goto_next_focus = 0;
+	}
 
 	ui_enter(0,0,w,h, CLIP | (overlay_wants_focus(window) ? NO_INPUT : 0));
 

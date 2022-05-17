@@ -30,6 +30,7 @@ struct ui_window {
 	int codepoints[UI_CODEPOINTS_MAX];
 	int codepoint_cursor;
 	int focused_group;
+	int next_focus_group;
 };
 
 #define UI_KEYSEQ_MAX (4)
@@ -65,6 +66,7 @@ void ui_pan(int dx, int dy);
 void ui_dim(int* w, int* h);
 int ui_flags();
 int ui_focused();
+void ui_goto_next_focus();
 void ui_enter(int x, int y, int w, int h, int flags);
 void ui_enter_group(int x, int y, int w, int h, int flags, int* group);
 void ui_leave();
