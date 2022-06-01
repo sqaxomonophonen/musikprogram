@@ -4,6 +4,7 @@
 
 #include "common.h"
 #include "gpudl.h"
+#include "r.h"
 
 #define NO_INPUT (1<<0) // suppress input in region
 #define CLIP     (1<<1) // clip graphics to region
@@ -40,25 +41,17 @@ struct ui_keyseq {
 	int code[UI_KEYSEQ_MAX];
 };
 
-static inline void ui_window_key_event(struct ui_window* uw, enum gpudl_keycode code, int is_press)
-{
-	if (!uw || code < 0 || code >= GK_SPECIAL_END) return;
-	struct ui_key* key = &uw->key[code];
-	if (is_press) {
-		key->pressed++;
-		key->down_serial = (++uw->serial);
-	} else {
-		key->down_serial = 0;
-	}
-}
+struct ui_text_input {
+	int* codepoints;
+	int cursor;
+	int select0, select1;;
+};
 
-static inline void ui_window_codepoint(struct ui_window* uw, int codepoint)
-{
-	if (!uw) return;
-	if (0 <= uw->n_codepoints && uw->n_codepoints < UI_CODEPOINTS_MAX) {
-		uw->codepoints[uw->n_codepoints++] = codepoint;
-	}
-}
+struct ui_style_text_input {
+	enum r_font font;
+	int font_px;
+	// TODO
+};
 
 void ui_begin(struct ui_window* uw);
 void ui_end();
@@ -82,6 +75,9 @@ int ui_read(); // next text-input codepoint or 0 when buffer is empty
 union v2 ui_mpos();
 int ui_clicked(enum gpudl_button button);
 int ui_down(enum gpudl_button button);
+
+void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev);
+void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct ui_style_text_input* style);
 
 #define UI_H
 #endif

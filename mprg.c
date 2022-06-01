@@ -19,6 +19,7 @@
 #define MAX_WINDOWS (16)
 
 int ptn0;
+struct ui_style_text_input style_asset_pane_text_input;
 
 struct window_graph {
 	int id;
@@ -34,6 +35,10 @@ struct toggle {
 	int animating;
 };
 
+struct asset_pane {
+	struct ui_text_input text_input;
+};
+
 struct window {
 	int id;
 	int width;
@@ -45,6 +50,7 @@ struct window {
 	struct toggle overlay_assets_toggle;
 	int grp_tracker, grp_graph, grp_assets_left, grp_assets_right;
 	int goto_next_focus;
+	struct asset_pane asset_panes[2];
 };
 
 struct mprg {
@@ -157,6 +163,8 @@ static void graph_present(struct window* window)
 
 static void asset_pane_present(struct window* window, int right, float x)
 {
+	struct asset_pane* pane = &window->asset_panes[right ? 1 : 0];
+
 	const int pad0 = 16;
 	const int pad1 = 10;
 
@@ -170,6 +178,8 @@ static void asset_pane_present(struct window* window, int right, float x)
 
 	rcol_plain(pma_alpha(0,0,0.4,1));
 	rt_quad(pad0+pad1,pad0+pad1,w-(pad0+pad1)*2,(pad0+pad1)*2);
+
+	ui_handle_text_input(&pane->text_input, w, 0, &style_asset_pane_text_input);
 
 	r_end();
 }
@@ -356,9 +366,20 @@ static void window_present(struct window* window)
 	ui_end();
 }
 
+static void init_styles()
+{
+	{
+		struct ui_style_text_input* i = &style_asset_pane_text_input;
+		i->font = R_FONT_VARIABLE;
+		i->font_px = 35;
+	}
+}
+
 int main(int argc, char** argv)
 {
 	prefs_init();
+
+	init_styles();
 
 	stm_setup();
 	gpudl_init();
@@ -418,8 +439,7 @@ int main(int argc, char** argv)
 				do_close = 1;
 				break;
 			case GPUDL_KEY:
-				ui_window_key_event(uw, e.key.code, e.key.pressed);
-				if (e.key.codepoint > 0) ui_window_codepoint(uw, e.key.codepoint);
+				ui_window_key_event(uw, &e.key);
 				break;
 			case GPUDL_MOTION:
 				if (uw) {

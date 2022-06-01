@@ -323,3 +323,50 @@ static inline int region_intersect(struct region a, struct region b)
 		;
 }
 #endif
+
+void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
+{
+	if (!uw) return;
+
+	if (ev->code >= 0 && ev->code < GK_SPECIAL_END) {
+		struct ui_key* key = &uw->key[ev->code];
+		if (ev->pressed) {
+			key->pressed++;
+			key->down_serial = (++uw->serial);
+		} else {
+			key->down_serial = 0;
+		}
+	}
+
+	if (0 <= uw->n_codepoints && uw->n_codepoints < UI_CODEPOINTS_MAX) {
+		// TODO also handle various special keys, e.g.:
+		//  - GK_LEFT / GK_RIGHT for cursor movement...
+		//  - GK_SHIFT + GK_LEFT / GK_RIGHT for selections...
+		//  - CTRL+A for select all
+		// etc? these should emit fake codepoints; e.g. negative, or
+		// above 1<<21 (max unicode codepoint)
+		if (ev->codepoint > 0) {
+			uw->codepoints[uw->n_codepoints++] = ev->codepoint;
+		}
+	}
+}
+
+void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct ui_style_text_input* style)
+{
+	{
+		const int n0 = arrlen(ti->codepoints);
+		if (ti->cursor < 0) ti->cursor = 0;
+		if (ti->cursor > n0) ti->cursor = n0;
+		//if (ti->select0 < 0) ti->select0 = 0;
+		// TODO trim selections too?
+	}
+
+	int c;
+	while ((c = ui_read()) != 0) {
+		if (c < ' ') {
+			continue;
+		}
+		arrins(ti->codepoints, ti->cursor, c);
+		ti->cursor++;
+	}
+}
