@@ -352,41 +352,67 @@ static int load_v4(struct loader* l, union v4* v)
 	return OK_VALUE;
 }
 
-static int load_keyseqn(struct loader* l, int n_keyseqs, struct ui_keyseq *keyseq)
+static int str2modmask(const char* s)
 {
-	for (int i = 0; i < n_keyseqs; i++) keyseq[i].n = 0;
+	#define HANDLE(MOD) \
+		if (strcmp(s, "L" #MOD) == 0) return (1<<UI_L ## MOD); \
+		if (strcmp(s, "R" #MOD) == 0) return (1<<UI_R ## MOD); \
+		if (strcmp(s,     #MOD) == 0) return (1<<UI_L ## MOD) + (1<<UI_R ## MOD);
+
+	HANDLE(SHIFT)
+	HANDLE(ALT)
+	HANDLE(CTRL)
+	HANDLE(SUPER)
+
+	#undef HANDLE
+
+	return 0;
+}
+
+static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_shortcut *shortcuts)
+{
+	memset(shortcuts, 0, n_shortcuts * sizeof(*shortcuts));
+
 	int n_tokens = arrlen(l->tokens);
 	if (n_tokens < 2) return OK_VALUE;
-	int ki = 0;
+
+	int sci = 0;
+	struct ui_shortcut *sc = shortcuts;
+
 	for (int i = 1; i < n_tokens; i++) {
 		struct token* tok = &l->tokens[i];
 		char buf[1024];
 		int r = token_get_string(l, tok, buf, sizeof buf);
-		if (r == BAD_VALUE) return r;
+		if (r == BAD_VALUE) return BAD_VALUE;
 		int len = strlen(buf);
-		int code = -1;
 		if (len == 4 && memcmp(buf, "*OR*", 4) == 0) {
-			ki++;
+			sci++;
+			if (sci >= n_shortcuts) return BAD_VALUE;
+			sc++;
 			continue;
 		} else if (len == 1 && buf[0] < '~') {
-			code = buf[0];
+			if (sc->keycode) return BAD_VALUE;
+			sc->keycode = buf[0];
 		} else {
-			#define GPUDL_KEY(NAME) if (len == strlen(#NAME) && memcmp(buf, #NAME, strlen(#NAME)) == 0) code = GK_ ## NAME;
-			GPUDL_KEYS
-			#undef GPUDL_KEY
+			int modmask = str2modmask(buf);
+			if (modmask != 0) {
+				if (sc->keycode) return BAD_VALUE;
+				sc->modmask |= modmask;
+			} else {
+				if (sc->keycode) return BAD_VALUE;
+				#define GPUDL_KEY(NAME) if (len == strlen(#NAME) && memcmp(buf, #NAME, strlen(#NAME)) == 0) sc->keycode = GK_ ## NAME;
+				GPUDL_KEYS
+				#undef GPUDL_KEY
+			}
 		}
-		if ((code < 0) || (ki >= n_keyseqs)) return BAD_VALUE;
-		struct ui_keyseq* ks = &keyseq[ki];
-		if (ks->n >= UI_KEYSEQ_MAX) return BAD_VALUE;
-		ks->code[ks->n++] = code;
 	}
 
 	return OK_VALUE;
 }
 
-static int load_keyseq2(struct loader* l, struct ui_keyseq *keyseq)
+static int load_shortcut2(struct loader* l, struct ui_shortcut *shortcut)
 {
-	return load_keyseqn(l, 2, keyseq);
+	return load_shortcutn(l, 2, shortcut);
 }
 
 static int load_postproc_enum(struct loader* l, postproc_enum* v)
@@ -472,7 +498,7 @@ static void load_keymap(struct keymap* km, struct loader* l)
 {
 	for (; l->more; loader_next(l)) {
 		int h = NO_VALUE;
-		#define ACTION(NAME,SCOPE) if (loader_key(l, #NAME)) h = load_keyseq2(l, &km->NAME[0]);
+		#define ACTION(NAME,SCOPE) if (loader_key(l, #NAME)) h = load_shortcut2(l, &km->NAME[0]);
 		ACTIONS
 		#undef ACTION
 		report(h, l);

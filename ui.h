@@ -6,6 +6,23 @@
 #include "gpudl.h"
 #include "r.h"
 
+enum ui_modifier {
+	UI_LSHIFT, UI_RSHIFT,
+	UI_LCTRL,  UI_RCTRL,
+	UI_LALT,   UI_RALT,
+	UI_LSUPER, UI_RSUPER,
+};
+
+#if 0
+// XXX do we need this? probably not?
+enum ui_modifier_any {
+	UI_SHIFT,
+	UI_CTRL,
+	UI_ALT,
+	UI_SUPER,
+};
+#endif
+
 #define NO_INPUT (1<<0) // suppress input in region
 #define CLIP     (1<<1) // clip graphics to region
 
@@ -15,30 +32,30 @@ struct ui_mbtn {
 	union v2 mpos;
 };
 
-struct ui_key {
-	int pressed;
-	int down_serial;
+struct ui_keypress {
+	uint32_t code         :31;
+	uint32_t is_codepoint : 1;
+	uint32_t modmask;
 };
 
-#define UI_CODEPOINTS_MAX (32)
+#define UI_KEYPRESSES_MAX (32)
 
 struct ui_window {
 	union v2 mpos, last_mpos;
 	struct ui_mbtn mbtn[GPUDL_BUTTON_END];
-	struct ui_key key[GK_SPECIAL_END];
-	int serial;
-	int n_codepoints;
-	int codepoints[UI_CODEPOINTS_MAX];
-	int codepoint_cursor;
+
+	int keymask[GK_SPECIAL_END/32+1];
+	int n_keypresses;
+	struct ui_keypress keypresses[UI_KEYPRESSES_MAX];
+	int keypress_cursor;
+
 	int focused_group;
 	int next_focus_group;
 };
 
-#define UI_KEYSEQ_MAX (4)
-
-struct ui_keyseq {
-	int n;
-	int code[UI_KEYSEQ_MAX];
+struct ui_shortcut {
+	uint32_t modmask;
+	uint32_t keycode;
 };
 
 struct ui_text_input {
@@ -64,13 +81,11 @@ void ui_enter(int x, int y, int w, int h, int flags);
 void ui_enter_group(int x, int y, int w, int h, int flags, int* group);
 void ui_leave();
 
-int ui_keyseq(struct ui_keyseq* keyseq);
+int ui_shortcut(struct ui_shortcut s);
 int ui_key(int code);
-int ui_keyseq2(int code0, int code1);
-int ui_keyseq3(int code0, int code1, int code2);
-int ui_keyseq4(int code0, int code1, int code2, int code3);
+
 void ui_keyclear();
-int ui_read(); // next text-input codepoint or 0 when buffer is empty
+int ui_read_keypress(struct ui_keypress* kp);
 
 union v2 ui_mpos();
 int ui_clicked(enum gpudl_button button);

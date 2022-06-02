@@ -208,10 +208,12 @@ static float curve_in_sin(float x)
 	return sin(x*PI*0.5f);
 }
 
+#if 0
 static float curve_out_sin(float x)
 {
 	return 1.0f - curve_in_sin(1.0f - x);
 }
+#endif
 
 static void overlay_present(struct window* window)
 {
@@ -300,18 +302,15 @@ static void execute_action(struct window* window, enum action action)
 	}
 }
 
-static void handle_actions(struct window* window, int scope_flags)
+static void handle_actions(struct window* window, int scope_mask)
 {
 	int action = -1;
-	int action_keyseqn = 0;
 	#define ACTION(NAME,SCOPE) \
-		if ((SCOPE) & scope_flags) { \
-			if (keymap.NAME[0].n > action_keyseqn && ui_keyseq(&keymap.NAME[0])) { \
-				action_keyseqn = keymap.NAME[0].n; \
+		if ((SCOPE) & scope_mask) { \
+			if (ui_shortcut(keymap.NAME[0])) { \
 				action = ACTION_ ## NAME; \
 			} \
-			if (keymap.NAME[1].n > action_keyseqn && ui_keyseq(&keymap.NAME[1])) { \
-				action_keyseqn = keymap.NAME[1].n; \
+			if (ui_shortcut(keymap.NAME[1])) { \
 				action = ACTION_ ## NAME; \
 			} \
 		}
@@ -319,7 +318,6 @@ static void handle_actions(struct window* window, int scope_flags)
 	#undef ACTION
 	if (action >= 0) {
 		execute_action(window, action);
-		ui_keyclear();
 	}
 }
 

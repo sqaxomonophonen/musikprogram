@@ -16,8 +16,6 @@ struct uistate {
 	int groups[MAX_REGION_STACK_SIZE];
 	struct ui_window* uw;
 
-	int keyclear;
-
 	int group_serial;
 	int* seen_groups;
 
@@ -34,7 +32,7 @@ void ui_begin(struct ui_window* uw)
 	struct uistate* u = &uistate;
 	assert((u->uw == NULL) && "already inside ui_begin()");
 	u->uw = uw;
-	uw->codepoint_cursor = 0;
+	uw->keypress_cursor = 0;
 	arrsetlen(u->seen_groups, 0);
 }
 
@@ -52,8 +50,9 @@ void ui_end()
 	assert((u->n_regions == 0) && "ui_end() inside ui_enter()");
 	struct ui_window* uw = get_uw();
 	for (int i = 0; i < GPUDL_BUTTON_END; i++) uw->mbtn[i].clicked = 0;
-	for (int i = 0; i < GK_SPECIAL_END; i++) uw->key[i].pressed = 0;
-	uw->n_codepoints = 0;
+	memset(uw->keymask, 0, sizeof uw->keymask);
+
+	uw->n_keypresses = 0;
 	int lowest_group = -1;
 	int next_group = -1;
 	int seen = 0;
@@ -191,8 +190,6 @@ void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 	assert(n >= 0);
 	assert((n < MAX_REGION_STACK_SIZE) && "too many regions");
 
-	if (n == 0) u->keyclear = 0;
-
 	u->flags[n] = flags;
 	u->regions[n] = rect(x,y,w,h);
 	u->groups[n] = group ? *group : 0;
@@ -233,61 +230,42 @@ static int has_keyboard_focus()
 	return group == uistate.uw->focused_group;
 }
 
-int ui_keyseq(struct ui_keyseq* keyseq)
+static int shortcut_matches_keypress(struct ui_shortcut s, struct ui_keypress kp)
 {
-	// FIXME FIXME this is somewhat broken... it matches a _sequence_, so
-	// LCTRL,LSHIFT,ESC is different from LSHIFT,LCTRL,ESC; modifiers
-	// should be treated as a mask, and I don't think it makes sense to
-	// have more than one non-modifer key? so, modifier + key. it should
-	// also be possible to match SHIFT instead of specifically LSHIFT or
-	// RSHIFT.
-	if (!has_keyboard_focus() || keyseq->n == 0 || uistate.keyclear) return 0;
-	struct ui_window* uw = get_uw();
-	int last_serial = 0;
-	for (int i = 0; i < keyseq->n; i++) {
-		const int code = keyseq->code[i];
-		assert(0 <= code && code < GK_SPECIAL_END);
-		struct ui_key* key = &uw->key[code];
-		if (key->down_serial <= last_serial) return 0;
-		last_serial = key->down_serial;
-		if (i == keyseq->n-1 && !key->pressed) return 0;
-	}
-	return 1;
+	return 0; // XXX
 }
 
-void ui_keyclear()
+int ui_shortcut(struct ui_shortcut s)
 {
-	uistate.keyclear = 1;
+	if (s.keycode == 0) return 0;
+	if (!has_keyboard_focus()) return 0;
+	struct ui_window* uw = get_uw();
+
+	for (int i = uw->keypress_cursor; i < uw->n_keypresses; i++) {
+		struct ui_keypress kp = uw->keypresses[i];
+		if (shortcut_matches_keypress(s, kp)) {
+			int to_move = uw->n_keypresses - i - 1;
+			if (to_move > 0) memmove(&uw->keypresses[i], &uw->keypresses[i+1], to_move * sizeof(kp));
+			uw->n_keypresses--;
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 int ui_key(int code)
 {
-	return ui_keyseq(&(struct ui_keyseq) { .n=1, .code={ code } });
+	return ui_shortcut((struct ui_shortcut) { .keycode = code });
 }
 
-int ui_keyseq2(int code0, int code1)
+int ui_read_keypress(struct ui_keypress* kp)
 {
-	return ui_keyseq(&(struct ui_keyseq) { .n=2, .code={ code0,code1 } });
-}
-
-int ui_keyseq3(int code0, int code1, int code2)
-{
-	return ui_keyseq(&(struct ui_keyseq) { .n=3, .code={ code0,code1,code2 } });
-}
-
-int ui_keyseq4(int code0, int code1, int code2, int code3)
-{
-	return ui_keyseq(&(struct ui_keyseq) { .n=4, .code={ code0,code1,code2,code3 } });
-}
-
-int ui_read()
-{
-	if (!has_keyboard_focus() || uistate.keyclear) return 0;
+	if (!has_keyboard_focus()) return 0;
 	struct ui_window* uw = get_uw();
-	if (0 <= uw->codepoint_cursor && uw->codepoint_cursor < uw->n_codepoints) {
-		return uw->codepoints[uw->codepoint_cursor++];
-	}
-	return 0;
+	if (uw->keypress_cursor >= uw->n_keypresses) return 0;
+	memcpy(kp, &uw->keypresses[uw->keypress_cursor++], sizeof *kp);
+	return 1;
 }
 
 union v2 ui_mpos()
@@ -328,6 +306,7 @@ void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 {
 	if (!uw) return;
 
+	#if 0
 	if (ev->code >= 0 && ev->code < GK_SPECIAL_END) {
 		struct ui_key* key = &uw->key[ev->code];
 		if (ev->pressed) {
@@ -349,6 +328,7 @@ void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 			uw->codepoints[uw->n_codepoints++] = ev->codepoint;
 		}
 	}
+	#endif
 }
 
 void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct ui_style_text_input* style)
