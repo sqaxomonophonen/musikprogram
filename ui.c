@@ -30,14 +30,11 @@ struct uistate {
 static int modifier_from_keycode(int keycode)
 {
 	switch (keycode) {
-	case GK_LSHIFT: return UI_LSHIFT;
-	case GK_RSHIFT: return UI_RSHIFT;
-	case GK_LCTRL:  return UI_LCTRL;
-	case GK_RCTRL:  return UI_RCTRL;
-	case GK_LALT:   return UI_LALT;
-	case GK_RALT:   return UI_RALT;
-	case GK_LSUPER: return UI_LSUPER;
-	case GK_RSUPER: return UI_RSUPER;
+	#define MOD(M) \
+	case GK_L##M: return UI_L##M; \
+	case GK_R##M: return UI_R##M;
+	UI_MODIFIERS
+	#undef MOD
 	default: return -1;
 	}
 }
