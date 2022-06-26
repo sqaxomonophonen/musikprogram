@@ -160,7 +160,7 @@ static int parse_string(const char* p0, const char** p1, char* buf, size_t bufsz
 				break;
 			} else if (c == '\\') {
 				escape = 1;
-			} else if (' ' <= c && c <= '~') {
+			} else if ((' ' <= c && c <= '~') || c < 0) {
 				s = c;
 			} else {
 				break;
@@ -354,22 +354,17 @@ static int load_v4(struct loader* l, union v4* v)
 
 static int str2modmask(const char* s)
 {
-	#define HANDLE(MOD) \
-		if (strcmp(s, "L" #MOD) == 0) return (1<<UI_L ## MOD); \
-		if (strcmp(s, "R" #MOD) == 0) return (1<<UI_R ## MOD); \
-		if (strcmp(s,     #MOD) == 0) return (1<<UI_L ## MOD) + (1<<UI_R ## MOD);
-
-	HANDLE(SHIFT)
-	HANDLE(ALT)
-	HANDLE(CTRL)
-	HANDLE(SUPER)
-
-	#undef HANDLE
+	#define MOD(M) \
+		if (strcmp(s, "L" #M) == 0) return (1<<UI_L ## M); \
+		if (strcmp(s, "R" #M) == 0) return (1<<UI_R ## M); \
+		if (strcmp(s,     #M) == 0) return (1<<UI_L ## M) + (1<<UI_R ## M);
+	UI_MODIFIERS
+	#undef MOD
 
 	return 0;
 }
 
-static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_shortcut *shortcuts)
+static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_keypress *shortcuts)
 {
 	memset(shortcuts, 0, n_shortcuts * sizeof(*shortcuts));
 
@@ -377,7 +372,7 @@ static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_shortcut 
 	if (n_tokens < 2) return OK_VALUE;
 
 	int sci = 0;
-	struct ui_shortcut *sc = shortcuts;
+	struct ui_keypress *sc = shortcuts;
 
 	for (int i = 1; i < n_tokens; i++) {
 		struct token* tok = &l->tokens[i];
@@ -385,22 +380,28 @@ static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_shortcut 
 		int r = token_get_string(l, tok, buf, sizeof buf);
 		if (r == BAD_VALUE) return BAD_VALUE;
 		int len = strlen(buf);
-		if (len == 4 && memcmp(buf, "*OR*", 4) == 0) {
+		if (len == 1 && buf[0] < '~') {
+			if (sc->code) return BAD_VALUE;
+			sc->code = buf[0];
+			sc->is_codepoint = 1;
+		} else if (len > 1 && buf[0] < 0) {
+			const char* p = buf;
+			int n = len;
+			sc->code = gpudl_utf8_decode(&p, &n);
+			sc->is_codepoint = 1;
+			if (n != 0) return BAD_VALUE;
+		} else if (len == 4 && memcmp(buf, "*OR*", 4) == 0) {
 			sci++;
 			if (sci >= n_shortcuts) return BAD_VALUE;
 			sc++;
 			continue;
-		} else if (len == 1 && buf[0] < '~') {
-			if (sc->keycode) return BAD_VALUE;
-			sc->keycode = buf[0];
 		} else {
 			int modmask = str2modmask(buf);
+			if (sc->code) return BAD_VALUE; // modifier after key
 			if (modmask != 0) {
-				if (sc->keycode) return BAD_VALUE;
 				sc->modmask |= modmask;
 			} else {
-				if (sc->keycode) return BAD_VALUE;
-				#define GPUDL_KEY(NAME) if (len == strlen(#NAME) && memcmp(buf, #NAME, strlen(#NAME)) == 0) sc->keycode = GK_ ## NAME;
+				#define GPUDL_KEY(NAME) if (len == strlen(#NAME) && memcmp(buf, #NAME, strlen(#NAME)) == 0) sc->code = GK_ ## NAME;
 				GPUDL_KEYS
 				#undef GPUDL_KEY
 			}
@@ -410,7 +411,7 @@ static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_shortcut 
 	return OK_VALUE;
 }
 
-static int load_shortcut2(struct loader* l, struct ui_shortcut *shortcut)
+static int load_shortcut2(struct loader* l, struct ui_keypress *shortcut)
 {
 	return load_shortcutn(l, 2, shortcut);
 }

@@ -6,22 +6,26 @@
 #include "gpudl.h"
 #include "r.h"
 
+#define UI_MODIFIERS \
+	MOD(SHIFT) \
+	MOD(CTRL) \
+	MOD(ALT) \
+	MOD(SUPER)
+
 enum ui_modifier {
-	UI_LSHIFT, UI_RSHIFT,
-	UI_LCTRL,  UI_RCTRL,
-	UI_LALT,   UI_RALT,
-	UI_LSUPER, UI_RSUPER,
+	#define MOD(M) UI_L##M, UI_R##M,
+	UI_MODIFIERS
+	#undef MOD
 };
 
-#if 0
-// XXX do we need this? probably not?
-enum ui_modifier_any {
-	UI_SHIFT,
-	UI_CTRL,
-	UI_ALT,
-	UI_SUPER,
+enum ui_modifier_mask {
+	#define MOD(M) \
+		UI_L##M##_MASK = 1 << (UI_L##M), \
+		UI_R##M##_MASK = 1 << (UI_R##M), \
+		UI_##M##_MASK = (UI_R##M##_MASK + UI_L##M##_MASK),
+	UI_MODIFIERS
+	#undef MOD
 };
-#endif
 
 #define NO_INPUT (1<<0) // suppress input in region
 #define CLIP     (1<<1) // clip graphics to region
@@ -33,8 +37,9 @@ struct ui_mbtn {
 };
 
 struct ui_keypress {
-	uint32_t code         :31;
-	uint32_t is_codepoint : 1;
+	uint32_t code         :30;
+	uint32_t is_codepoint : 1; // otherwise gpudl keycode
+	uint32_t keep         : 1;
 	uint32_t modmask;
 };
 
@@ -44,18 +49,13 @@ struct ui_window {
 	union v2 mpos, last_mpos;
 	struct ui_mbtn mbtn[GPUDL_BUTTON_END];
 
-	int keymask[GK_SPECIAL_END/32+1];
 	int n_keypresses;
 	struct ui_keypress keypresses[UI_KEYPRESSES_MAX];
 	int keypress_cursor;
+	uint32_t modmask;
 
 	int focused_group;
 	int next_focus_group;
-};
-
-struct ui_shortcut {
-	uint32_t modmask;
-	uint32_t keycode;
 };
 
 struct ui_text_input {
@@ -81,8 +81,8 @@ void ui_enter(int x, int y, int w, int h, int flags);
 void ui_enter_group(int x, int y, int w, int h, int flags, int* group);
 void ui_leave();
 
-int ui_shortcut(struct ui_shortcut s);
-int ui_key(int code);
+int ui_shortcut(struct ui_keypress s);
+int ui_key(int codepoint);
 
 void ui_keyclear();
 int ui_read_keypress(struct ui_keypress* kp);
@@ -93,6 +93,7 @@ int ui_down(enum gpudl_button button);
 
 void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev);
 void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct ui_style_text_input* style);
+int ui_kpoll(struct ui_keypress** kp);
 
 #define UI_H
 #endif

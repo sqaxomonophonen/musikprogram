@@ -27,6 +27,28 @@ struct uistate {
 
 } uistate;
 
+static int modifier_from_keycode(int keycode)
+{
+	switch (keycode) {
+	case GK_LSHIFT: return UI_LSHIFT;
+	case GK_RSHIFT: return UI_RSHIFT;
+	case GK_LCTRL:  return UI_LCTRL;
+	case GK_RCTRL:  return UI_RCTRL;
+	case GK_LALT:   return UI_LALT;
+	case GK_RALT:   return UI_RALT;
+	case GK_LSUPER: return UI_LSUPER;
+	case GK_RSUPER: return UI_RSUPER;
+	default: return -1;
+	}
+}
+
+#if 0
+static int keycode_is_modifier(int keycode)
+{
+	return modifier_from_keycode(keycode) != -1;
+}
+#endif
+
 void ui_begin(struct ui_window* uw)
 {
 	struct uistate* u = &uistate;
@@ -50,7 +72,6 @@ void ui_end()
 	assert((u->n_regions == 0) && "ui_end() inside ui_enter()");
 	struct ui_window* uw = get_uw();
 	for (int i = 0; i < GPUDL_BUTTON_END; i++) uw->mbtn[i].clicked = 0;
-	memset(uw->keymask, 0, sizeof uw->keymask);
 
 	uw->n_keypresses = 0;
 	int lowest_group = -1;
@@ -230,14 +251,34 @@ static int has_keyboard_focus()
 	return group == uistate.uw->focused_group;
 }
 
-static int shortcut_matches_keypress(struct ui_shortcut s, struct ui_keypress kp)
+static int modmaskmatch(int pressed_modifiers_mask, int match_mask)
 {
-	return 0; // XXX
+	// no match if modifiers are pressed which are NOT in match mask
+	if (pressed_modifiers_mask & ~match_mask) return 0;
+
+	#define MOD(M) \
+	{ \
+		const int mm = match_mask & UI_##M##_MASK; \
+		const int pm = pressed_modifiers_mask & UI_##M##_MASK; \
+		if (mm == UI_##M##_MASK && pm == 0) return 0; \
+		if (mm == UI_L##M##_MASK && pm != UI_L##M##_MASK) return 0; \
+		if (mm == UI_R##M##_MASK && pm != UI_R##M##_MASK) return 0; \
+	}
+	UI_MODIFIERS
+	#undef MOD
+
+	return 1;
 }
 
-int ui_shortcut(struct ui_shortcut s)
+static int shortcut_matches_keypress(struct ui_keypress s, struct ui_keypress k)
 {
-	if (s.keycode == 0) return 0;
+	if (!modmaskmatch(k.modmask, s.modmask)) return 0;
+	return k.is_codepoint == s.is_codepoint && k.code == s.code;
+}
+
+int ui_shortcut(struct ui_keypress s)
+{
+	if (s.code == 0) return 0;
 	if (!has_keyboard_focus()) return 0;
 	struct ui_window* uw = get_uw();
 
@@ -254,9 +295,9 @@ int ui_shortcut(struct ui_shortcut s)
 	return 0;
 }
 
-int ui_key(int code)
+int ui_key(int codepoint)
 {
-	return ui_shortcut((struct ui_shortcut) { .keycode = code });
+	return ui_shortcut((struct ui_keypress) { .is_codepoint = 1, .code = codepoint });
 }
 
 int ui_read_keypress(struct ui_keypress* kp)
@@ -302,33 +343,38 @@ static inline int region_intersect(struct region a, struct region b)
 }
 #endif
 
+static void write_keypress(struct ui_window* uw, struct ui_keypress kp)
+{
+	if (uw->n_keypresses >= UI_KEYPRESSES_MAX) return;
+	kp.modmask = uw->modmask;
+	uw->keypresses[uw->n_keypresses++] = kp;
+}
+
 void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 {
 	if (!uw) return;
 
-	#if 0
-	if (ev->code >= 0 && ev->code < GK_SPECIAL_END) {
-		struct ui_key* key = &uw->key[ev->code];
+	const int code = ev->code;
+	const int modifier_index = modifier_from_keycode(code); // -1 if not a modifier
+	if (0 <= modifier_index && modifier_index < 32) {
+		const int mask = 1 << modifier_index;
 		if (ev->pressed) {
-			key->pressed++;
-			key->down_serial = (++uw->serial);
+			uw->modmask |= mask;
 		} else {
-			key->down_serial = 0;
+			uw->modmask &= ~mask;
 		}
-	}
-
-	if (0 <= uw->n_codepoints && uw->n_codepoints < UI_CODEPOINTS_MAX) {
-		// TODO also handle various special keys, e.g.:
-		//  - GK_LEFT / GK_RIGHT for cursor movement...
-		//  - GK_SHIFT + GK_LEFT / GK_RIGHT for selections...
-		//  - CTRL+A for select all
-		// etc? these should emit fake codepoints; e.g. negative, or
-		// above 1<<21 (max unicode codepoint)
+	} else if (modifier_index == -1 && ev->pressed) {
 		if (ev->codepoint > 0) {
-			uw->codepoints[uw->n_codepoints++] = ev->codepoint;
+			write_keypress(uw, (struct ui_keypress){
+				.is_codepoint = 1,
+				.code = ev->codepoint,
+			});
+		} else if (code > 0) {
+			write_keypress(uw, (struct ui_keypress){
+				.code = code,
+			});
 		}
 	}
-	#endif
 }
 
 void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct ui_style_text_input* style)
@@ -340,13 +386,42 @@ void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct
 		//if (ti->select0 < 0) ti->select0 = 0;
 		// TODO trim selections too?
 	}
+	// TODO
+}
 
-	int c;
-	while ((c = ui_read()) != 0) {
-		if (c < ' ') {
-			continue;
+int ui_kpoll(struct ui_keypress** kp)
+{
+	if (!has_keyboard_focus()) return 0;
+
+	struct uistate* u = &uistate;
+	struct ui_window* uw = u->uw;
+	if (uw == NULL) return 0;
+	const int n = uw->n_keypresses;
+	if (n == 0) return 0;
+	const int c = uw->keypress_cursor;
+	assert(c >= 0);
+	if (c < n) {
+		*kp = &uw->keypresses[c];
+		uw->keypress_cursor++;
+		return 1;
+	} else {
+		{ // remove keypresses not requested to be kept
+			struct ui_keypress* src = uw->keypresses;
+			struct ui_keypress* dst = src;
+			const int n = uw->n_keypresses;
+			for (int i = 0; i < n; i++) {
+				if (src->keep) {
+					if (src > dst) *dst = *src;
+					dst->keep = 0; // clear for another round
+					dst++;
+				} else {
+					uw->n_keypresses--;
+				}
+				src++;
+			}
 		}
-		arrins(ti->codepoints, ti->cursor, c);
-		ti->cursor++;
+
+		uw->keypress_cursor = 0;
+		return 0;
 	}
 }

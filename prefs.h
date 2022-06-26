@@ -81,7 +81,7 @@ enum action {
 };
 
 struct keymap {
-	#define ACTION(NAME,SCOPE) struct ui_shortcut NAME[2];
+	#define ACTION(NAME,SCOPE) struct ui_keypress NAME[2];
 	ACTIONS
 	#undef ACTION
 };

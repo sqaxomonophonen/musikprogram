@@ -191,8 +191,8 @@ static int overlay_wants_focus(struct window* window)
 
 static void focus_blurp(const char* what, float offset)
 {
-	int c;
-	while ((c = ui_read()) != 0) printf("%s TEXT %c\n", what, c);
+	struct ui_keypress* kp;
+	while (ui_kpoll(&kp)) printf("%s KEYPRESS \"%d\"\n", what, kp->code);
 	r_begin(R_MODE_TILE);
 	rcol_plain(ui_focused()
 		? pma_alpha(0,4,0,0.5)
@@ -224,6 +224,7 @@ static void overlay_present(struct window* window)
 		toggle_set(&window->overlay_assets_toggle, window->overlay_assets);
 		float x = toggle_eval(&window->overlay_assets_toggle, preferences.transition_duration);
 		if (x > 0.0f) {
+			const int do_close = (ui_key('\b') || ui_key('\033') || ui_key('\r'));
 			const int w2 = w/2;
 
 			int left_dx = 0;
@@ -263,7 +264,7 @@ static void overlay_present(struct window* window)
 				ui_leave();
 			}
 
-			if (ui_key('\b') || ui_key('\033') || ui_key('\r')) {
+			if (do_close) {
 				// XXX mock up; should probably be the input
 				// field that does this?
 				window->overlay_assets = 0;
@@ -342,8 +343,6 @@ static void window_present(struct window* window)
 
 	handle_actions(window, SCOPE_UNDERLAY);
 
-	int c;
-
 	ui_enter_group(0, 0, x1, h, CLIP, &window->grp_tracker);
 	tracker_present(window);
 	focus_blurp("TRACKER", 10);
@@ -351,7 +350,8 @@ static void window_present(struct window* window)
 
 	ui_enter_group(x1, 0, w-x1, h, CLIP, &window->grp_graph);
 	graph_present(window);
-	while ((c = ui_read()) != 0) printf("GRAPH TEXT %c\n", c);
+	struct ui_keypress* kp;
+	while (ui_kpoll(&kp)) printf("GRAPH KEYPRESS \"%d\"\n", kp->code);
 	focus_blurp("GRAPH", 10);
 	ui_leave();
 
