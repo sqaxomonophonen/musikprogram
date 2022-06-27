@@ -21,7 +21,7 @@ struct uniforms {
 
 fn dst_dim() -> vec2<f32> { return vec2<f32>(u.width, u.height); }
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) i: u32) -> vs_out {
 
 	var p0  = vec2<f32>(-1.0,  1.0);
@@ -77,7 +77,7 @@ fn rvec(d: f32, theta: f32) -> vec2<f32> {
 	return vec2<f32>(d*sin(theta), d*cos(theta));
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 	let I = 16.0; // MAX_INTENSITY (not sure I want to snprintf() myself out of this code duplication.. yet)
 	var acc = I * textureLoad(tex, vec2<i32>(in.xy), 0) * 0.4;

@@ -28,7 +28,7 @@ struct pat_uniforms {
 
 #include "inc_draw.wgsl"
 
-@stage(vertex)
+@vertex
 fn vs_main(
 	@location(0) xy: vec2<f32>,
 	@location(1) atlas_uv: vec2<f32>,
@@ -45,7 +45,7 @@ fn vs_main(
 	return out;
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 	return fragmap(
 		in.rgba

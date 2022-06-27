@@ -15,7 +15,7 @@ struct uniforms {
 
 #include "inc_draw.wgsl"
 
-@stage(vertex)
+@vertex
 fn vs_main(
 	@location(0) xy: vec2<f32>,
 	@location(1) uv: vec2<f32>,
@@ -28,7 +28,7 @@ fn vs_main(
 	return out;
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(in: vs_out) -> @location(0) vec4<f32> {
 	return fragmap(in.rgba * textureLoad(atlas, vec2<i32>(i32(in.uv.x), i32(in.uv.y)), 0).r);
 }
