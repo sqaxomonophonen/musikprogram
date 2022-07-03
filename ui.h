@@ -61,7 +61,7 @@ struct ui_window {
 struct ui_text_input {
 	int* codepoints;
 	int cursor;
-	int select0, select1;;
+	int select0, select1;
 };
 
 struct ui_style_text_input {
