@@ -422,10 +422,8 @@ static int ti_delete_selection(struct ui_text_input* ti)
 	if (nsel) {
 		arrdeln(ti->codepoints, s0, nsel);
 		ti->cursor = ti->select1 = ti->select0 = s0;
-		return n_sel;
-	} else {
-		return 0;
 	}
+	return nsel;
 }
 
 static void ti_delete(struct ui_text_input* ti, int is_backspace)
