@@ -465,6 +465,11 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 			ti_move(ti, -1, 1);
 		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .code = GK_RIGHT })) {
 			ti_move(ti, 1, 1);
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_CTRL_MASK, .is_codepoint = 1, .code = 1 /*'a'*/ })) { // XXX gpudl bug: ctrl+a gives codepoint 1?!
+			const int n = arrlen(ti->codepoints);
+			ti->cursor = n;
+			ti->select0 = 0;
+			ti->select1 = n;
 		} else if (kp->is_codepoint && kp->code >= ' ') {
 			ti_delete_selection(ti);
 			arrins(ti->codepoints, ti->cursor, kp->code);
