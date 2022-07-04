@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <assert.h>
 
 #include "stb_ds.h"
@@ -267,7 +268,7 @@ static int modmaskmatch(int pressed_modifiers_mask, int match_mask)
 	return 1;
 }
 
-static int shortcut_matches_keypress(struct ui_keypress s, struct ui_keypress k)
+static int shortcut_match(struct ui_keypress k, struct ui_keypress s)
 {
 	if (!modmaskmatch(k.modmask, s.modmask)) return 0;
 	return k.is_codepoint == s.is_codepoint && k.code == s.code;
@@ -281,7 +282,7 @@ int ui_shortcut(struct ui_keypress s)
 
 	for (int i = uw->keypress_cursor; i < uw->n_keypresses; i++) {
 		struct ui_keypress kp = uw->keypresses[i];
-		if (shortcut_matches_keypress(s, kp)) {
+		if (shortcut_match(kp, s)) {
 			int to_move = uw->n_keypresses - i - 1;
 			if (to_move > 0) memmove(&uw->keypresses[i], &uw->keypresses[i+1], to_move * sizeof(kp));
 			uw->n_keypresses--;
@@ -361,7 +362,7 @@ void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 			uw->modmask &= ~mask;
 		}
 	} else if (modifier_index == -1 && ev->pressed) {
-		if (ev->codepoint > 0) {
+		if (ev->codepoint > 0 && ev->codepoint != 0x7f) {
 			write_keypress(uw, (struct ui_keypress){
 				.is_codepoint = 1,
 				.code = ev->codepoint,
@@ -374,16 +375,126 @@ void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 	}
 }
 
-void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct ui_style_text_input* style)
+static void ti_trim(struct ui_text_input* ti)
 {
-	{
-		const int n0 = arrlen(ti->codepoints);
-		if (ti->cursor < 0) ti->cursor = 0;
-		if (ti->cursor > n0) ti->cursor = n0;
-		//if (ti->select0 < 0) ti->select0 = 0;
-		// TODO trim selections too?
+	const int n0 = arrlen(ti->codepoints);
+
+	if (ti->cursor < 0) ti->cursor = 0;
+	if (ti->cursor > n0) ti->cursor = n0;
+
+	if (ti->select0 < 0) ti->select0 = 0;
+	if (ti->select0 > n0) ti->select0 = n0;
+	if (ti->select1 < 0) ti->select1 = 0;
+	if (ti->select1 > n0) ti->select1 = n0;
+
+	if (ti->select1 < ti->select0) {
+		int tmp = ti->select0;
+		ti->select0 = ti->select1;
+		ti->select1 = tmp;
 	}
-	// TODO
+}
+
+static void ti_move(struct ui_text_input* ti, int delta, int is_selecting)
+{
+	ti->cursor += delta;
+	if (is_selecting) {
+		if (ti->cursor <= ti->select1) {
+			ti->select0 = ti->cursor;
+		} else {
+			ti->select1 = ti->cursor;
+		}
+		// I think... the swap in ti_trim() will fix select1<select0
+		// shennangians?
+	} else {
+		ti->select0 = ti->select1 = ti->cursor;
+	}
+	ti_trim(ti);
+}
+
+static void ti_delete(struct ui_text_input* ti, int is_backspace)
+{
+	const int is_delete = !is_backspace;
+
+	if (is_backspace && ti->cursor <= 0) return;
+	const int nc = arrlen(ti->codepoints);
+	if (is_delete && ti->cursor >= nc) return;
+
+	if (ti->select0 != ti->select1) {
+		// delete selection; [BACKSPACE] and [DELETE] works the same
+		const int n = ti->select1 - ti->select0;
+		assert(n > 0);
+		assert((ti->select0 + n) <= nc);
+		arrdeln(ti->codepoints, ti->select0, n);
+		ti->cursor = ti->select1 = ti->select0;
+		return;
+	}
+
+	if (is_backspace) ti->cursor--;
+	assert(0 <= ti->cursor && ti->cursor < nc);
+	arrdel(ti->codepoints, ti->cursor);
+	ti_trim(ti);
+}
+
+int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* style, int flags, int width)
+{
+	// TODO handle mouse stuff here?
+	if (!has_keyboard_focus()) return 0;
+	struct ui_keypress* kp;
+	int n_handled = 0;
+	while (ui_kpoll(&kp)) {
+		n_handled++;
+		if (shortcut_match(*kp, (struct ui_keypress) { .is_codepoint = 1, .code = '\b' })) { // backspace
+			ti_delete(ti, 1);
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .code = GK_DELETE })) {
+			ti_delete(ti, 0);
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .code = GK_LEFT })) {
+			ti_move(ti, -1, 0);
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .code = GK_RIGHT })) {
+			ti_move(ti, 1, 0);
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .code = GK_LEFT })) {
+			ti_move(ti, -1, 1);
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .code = GK_RIGHT })) {
+			ti_move(ti, 1, 1);
+		} else if (kp->is_codepoint && kp->code >= ' ') {
+			arrins(ti->codepoints, ti->cursor, kp->code);
+			ti->cursor++;
+		} else {
+			kp->keep = 1;
+			n_handled--;
+		}
+		// other keys?
+		//   tab? shift+tab? or is that a "widget manager problem"?
+		//   enter? escape? do what, send a signal, hmm?
+	}
+	return n_handled;
+}
+
+void ui_text_input_debug(struct ui_text_input* ti)
+{
+	printf("[");
+	const int n = arrlen(ti->codepoints);
+	int prev_style = 0;
+	for (int i = 0; i <= n; i++) {
+		int cp = i < n ? ti->codepoints[i] : ']';
+		int style;
+		if (i == ti->cursor) {
+			style = 2;
+		} else if (ti->select0 <= i && i < ti->select1) {
+			style = 1;
+		} else {
+			style = 0;
+		}
+		if (style != prev_style) {
+			switch (style) {
+			case 0: printf("\033[0m"); break;
+			case 1: printf("\033[44m"); break;
+			case 2: printf("\033[42m"); break;
+			}
+			prev_style = style;
+		}
+		printf("%c", cp); // FIXME utf8 encode
+	}
+	printf("\033[0m\n");
 }
 
 int ui_kpoll(struct ui_keypress** kp)

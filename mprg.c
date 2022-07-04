@@ -179,7 +179,9 @@ static void asset_pane_present(struct window* window, int right, float x)
 	rcol_plain(pma_alpha(0,0,0.4,1));
 	rt_quad(pad0+pad1,pad0+pad1,w-(pad0+pad1)*2,(pad0+pad1)*2);
 
-	ui_handle_text_input(&pane->text_input, w, 0, &style_asset_pane_text_input);
+	if (ui_text_input_handle(&pane->text_input, &style_asset_pane_text_input, 0, w)) {
+		ui_text_input_debug(&pane->text_input);
+	}
 
 	r_end();
 }
@@ -224,7 +226,7 @@ static void overlay_present(struct window* window)
 		toggle_set(&window->overlay_assets_toggle, window->overlay_assets);
 		float x = toggle_eval(&window->overlay_assets_toggle, preferences.transition_duration);
 		if (x > 0.0f) {
-			const int do_close = (ui_key('\b') || ui_key('\033') || ui_key('\r'));
+			const int do_close = (ui_key('\033') || ui_key('\r'));
 			const int w2 = w/2;
 
 			int left_dx = 0;

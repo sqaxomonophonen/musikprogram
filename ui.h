@@ -92,7 +92,8 @@ int ui_clicked(enum gpudl_button button);
 int ui_down(enum gpudl_button button);
 
 void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev);
-void ui_handle_text_input(struct ui_text_input* ti, int width, int flags, struct ui_style_text_input* style);
+int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* style, int flags, int width);
+void ui_text_input_debug(struct ui_text_input* ti);
 int ui_kpoll(struct ui_keypress** kp);
 
 #define UI_H
