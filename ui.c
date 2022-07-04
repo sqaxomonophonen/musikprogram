@@ -375,6 +375,22 @@ void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 	}
 }
 
+static int ti_get_selection(struct ui_text_input* ti, int* i0, int* i1)
+{
+	int d = ti->select1 - ti->select0;
+	if (d > 0) {
+		if (i0) *i0 = ti->select0;
+		if (i1) *i1 = ti->select1;
+		return d;
+	} else if (d < 0) {
+		if (i0) *i0 = ti->select1;
+		if (i1) *i1 = ti->select0;
+		return -d;
+	} else {
+		return 0;
+	}
+}
+
 static void ti_trim(struct ui_text_input* ti)
 {
 	const int n0 = arrlen(ti->codepoints);
@@ -386,48 +402,44 @@ static void ti_trim(struct ui_text_input* ti)
 	if (ti->select0 > n0) ti->select0 = n0;
 	if (ti->select1 < 0) ti->select1 = 0;
 	if (ti->select1 > n0) ti->select1 = n0;
-
-	if (ti->select1 < ti->select0) {
-		int tmp = ti->select0;
-		ti->select0 = ti->select1;
-		ti->select1 = tmp;
-	}
 }
 
 static void ti_move(struct ui_text_input* ti, int delta, int is_selecting)
 {
 	ti->cursor += delta;
 	if (is_selecting) {
-		if (ti->cursor <= ti->select1) {
-			ti->select0 = ti->cursor;
-		} else {
-			ti->select1 = ti->cursor;
-		}
-		// I think... the swap in ti_trim() will fix select1<select0
-		// shennangians?
+		ti->select1 = ti->cursor;
 	} else {
 		ti->select0 = ti->select1 = ti->cursor;
 	}
 	ti_trim(ti);
 }
 
+static int ti_delete_selection(struct ui_text_input* ti)
+{
+	int s0;
+	int nsel = ti_get_selection(ti, &s0, NULL);
+	if (nsel) {
+		arrdeln(ti->codepoints, s0, nsel);
+		ti->cursor = ti->select1 = ti->select0 = s0;
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
 static void ti_delete(struct ui_text_input* ti, int is_backspace)
 {
-	const int is_delete = !is_backspace;
-
-	if (is_backspace && ti->cursor <= 0) return;
 	const int nc = arrlen(ti->codepoints);
-	if (is_delete && ti->cursor >= nc) return;
 
-	if (ti->select0 != ti->select1) {
-		// delete selection; [BACKSPACE] and [DELETE] works the same
-		const int n = ti->select1 - ti->select0;
-		assert(n > 0);
-		assert((ti->select0 + n) <= nc);
-		arrdeln(ti->codepoints, ti->select0, n);
-		ti->cursor = ti->select1 = ti->select0;
+	if (ti_delete_selection(ti)) {
+		// [backspace] and [delete] work the same
 		return;
 	}
+
+	const int is_delete = !is_backspace;
+	if (is_backspace && ti->cursor <= 0) return;
+	if (is_delete && ti->cursor >= nc) return;
 
 	if (is_backspace) ti->cursor--;
 	assert(0 <= ti->cursor && ti->cursor < nc);
@@ -456,6 +468,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .code = GK_RIGHT })) {
 			ti_move(ti, 1, 1);
 		} else if (kp->is_codepoint && kp->code >= ' ') {
+			ti_delete_selection(ti);
 			arrins(ti->codepoints, ti->cursor, kp->code);
 			ti->cursor++;
 		} else {
@@ -474,12 +487,14 @@ void ui_text_input_debug(struct ui_text_input* ti)
 	printf("[");
 	const int n = arrlen(ti->codepoints);
 	int prev_style = 0;
+	int s0, s1;
+	int nsel = ti_get_selection(ti, &s0, &s1);
 	for (int i = 0; i <= n; i++) {
 		int cp = i < n ? ti->codepoints[i] : ']';
 		int style;
 		if (i == ti->cursor) {
 			style = 2;
-		} else if (ti->select0 <= i && i < ti->select1) {
+		} else if (nsel && s0 <= i && i < s1) {
 			style = 1;
 		} else {
 			style = 0;
