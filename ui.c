@@ -468,7 +468,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		} else if (kp->is_codepoint && kp->code >= ' ') {
 			ti_delete_selection(ti);
 			arrins(ti->codepoints, ti->cursor, kp->code);
-			ti->cursor++;
+			ti_move(ti, 1, 0);
 		} else {
 			kp->keep = 1;
 			n_handled--;
