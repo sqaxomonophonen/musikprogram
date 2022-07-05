@@ -487,32 +487,31 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 void ui_text_input_debug(struct ui_text_input* ti)
 {
+	const char* NON = "\033[0m";
+	const char* CUR = "\033[42m";
+	const char* SEL = "\033[44m";
 	printf("[");
 	const int n = arrlen(ti->codepoints);
-	int prev_style = 0;
+	const char* prev_style = NULL;
 	int s0, s1;
 	int nsel = ti_get_selection(ti, &s0, &s1);
 	for (int i = 0; i <= n; i++) {
 		int cp = i < n ? ti->codepoints[i] : ']';
-		int style;
+		const char* style;
 		if (i == ti->cursor) {
-			style = 2;
+			style = CUR;
 		} else if (nsel && s0 <= i && i < s1) {
-			style = 1;
+			style = SEL;
 		} else {
-			style = 0;
+			style = NON;
 		}
 		if (style != prev_style) {
-			switch (style) {
-			case 0: printf("\033[0m"); break;
-			case 1: printf("\033[44m"); break;
-			case 2: printf("\033[42m"); break;
-			}
+			printf("%s", style);
 			prev_style = style;
 		}
 		printf("%c", cp); // FIXME utf8 encode
 	}
-	printf("\033[0m\n");
+	printf("%s\n", NON);
 }
 
 int ui_kpoll(struct ui_keypress** kp)
