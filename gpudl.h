@@ -846,8 +846,7 @@ int gpudl_poll_event(struct gpudl_event* e)
 			}
 			ke->code = code;
 			#if 1
-			if (ke->pressed) printf("[#] st=%x code=%d cp=%d\n", xe.xkey.state, ke->code, ke->codepoint);
-			if (!ke->pressed) printf("[ ] st=%x code=%d cp=%d\n", xe.xkey.state, ke->code, ke->codepoint);
+			printf("[%c] st=%x code=%d cp=%d kc=%d\n", ke->pressed ? '#' : ' ', xe.xkey.state, ke->code, ke->codepoint, ke->keycode);
 			#endif
 			return 1;
 			} break;
