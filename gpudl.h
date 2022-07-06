@@ -197,11 +197,9 @@ struct gpudl_event_button {
 
 struct gpudl_event_key {
 	int pressed;
-	int code; // XXX remove
+	int code; // XXX delete me
 	int codepoint;
-	int modmask; // TODO populate
-	// internal keycode; guaranteed to be the same for press/release of
-	// same key, whereas codepoint is not
+	int modmask;
 	int keycode;
 };
 
@@ -682,14 +680,14 @@ int gpudl_poll_event(struct gpudl_event* e)
 	while (XPending(gpudl__runtime.x11_display)) {
 		XEvent xe;
 		XNextEvent(gpudl__runtime.x11_display, &xe);
-		Window w = xe.xany.window;
-		if (XFilterEvent(&xe, w)) continue;
+
+		if (XFilterEvent(&xe, None)) continue;
 
 		struct gpudl__window* win = NULL;
 		const int n_windows = gpudl__runtime.n_windows;
 		for (int i = 0; i < n_windows; i++) {
 			struct gpudl__window* maybe_win = &gpudl__runtime.windows[i];
-			if (maybe_win->x11_window == w) {
+			if (maybe_win->x11_window == xe.xany.window) {
 				win = maybe_win;
 				break;
 			}
@@ -762,33 +760,108 @@ int gpudl_poll_event(struct gpudl_event* e)
 			KeySym sym = 0;
 			if (win && ke->pressed) {
 				char buf[8];
-				int len = Xutf8LookupString(win->x11_ic, &xe.xkey, buf, sizeof buf, &sym, NULL);
-				if (len > 0) {
-					const char* p = &buf[0];
-					int codepoint = gpudl_utf8_decode(&p, &len);
-					if (codepoint >= 0) {
-						// XXX unfuck some control-code shit; e.g. ctrl+a gives codepoint=1;
-						// cltr+z gives codepoint=0x1a; ctrl+8 gives 0x7f. when using the above
-						// string lookup to get the KeySym, it seems that at least I can trust
-						// shift+a to give sym='A' (whereas XLookupKeysym() yields 'a')
-						ke->codepoint =
-							((0 <= codepoint && codepoint < ' ') || codepoint == 0x7f)
-							? sym
-							: codepoint;
+
+				for (int i = 0; i < 8; i++) {
+					XKeyEvent xkey = xe.xkey;
+
+					// XXX this hackery seems to be potentially useful
+					// to figure out which modifier keys are "part of
+					// the codepoint". for instance, on DK layout
+					// ($ setxkbmap dk), I have all kinds of funny
+					// characters available with the rightmost ALT key, e.g.
+					// I can type [R_ALT]+[q] to get "@", or [R_ALT]+[m] to
+					// get "µ". I think I'm ultimately only interested in
+					// knowing which modifier keys are NOT part of the codepoint,
+					// so the procedure would be to see which bits I can remove
+					// from the event without changing the codepoint according
+					// to Xutf8LookupString(), and those are my "true modifier
+					// keys". be careful with control-code stuff, which is
+					// something I'm flat out disagreeing with, even though it's
+					// superficially the same as the above R_ALT stuff, but:
+					// why would I ever want [ctrl]+[2] to send a NUL character?
+					// how is that EVER useful outside of terminal emulators? :)
+					// is X11 built for making terminal emulators? wtf? :)
+					// there's still a "philosophical discussion" hidden in here:
+					//   [shift]+[6]  -- raw key combination
+					//   "^"          -- codepoint you get with US layout
+					//   "&"          -- codepoint you get with DK layout
+					// which is "correct interpretation" of [shift]+[6]? I think
+					// codepoints are typically generally useful... but sometimes
+					// the raw key combination seems more useful... say, if you have
+					// an application where [shift]+[0-9] selects between 10 different
+					// things... like tabs... it's more "layout agnostic" to define
+					// these as shift+number than using codepoints, which differ
+					// from layout to layout?
+
+					// why is keyboard input so fucked up and hard?
+
+					const char* what = NULL;
+					int mask = 0;
+					switch (i) {
+					case 1:
+						what = "SHIFT";
+						mask = ~ShiftMask;
+						break;
+					case 2:
+						what = "CTRL";
+						mask = ~ControlMask;
+						break;
+					case 3:
+						what = "MOD1";
+						mask = ~Mod1Mask;
+						break;
+					case 4:
+						what = "MOD2";
+						mask = ~Mod2Mask;
+						break;
+					case 5:
+						what = "MOD3";
+						mask = ~Mod3Mask;
+						break;
+					case 6:
+						what = "MOD4";
+						mask = ~Mod4Mask;
+						break;
+					case 7:
+						what = "MOD5";
+						mask = ~Mod5Mask;
+						break;
 					}
 
-					// TODO set ke->modmask
-					#if 0
-					const int modifiers = ShiftMask + ControlMask + Mod1Mask + Mod2Mask + Mod3Mask + Mod4Mask + Mod5Mask;
-					if (xe.xkey.state & modifiers) {
-						char buf2[8];
-						for (;;) {
-							XKeyEvent xkey = xe.xkey;
-							int len2 = Xutf8LookupString(win->x11_ic, &xkey, buf2, sizeof buf2, NULL, NULL);
-							...
+					if (mask) xkey.state &= mask;
+
+					int len = Xutf8LookupString(win->x11_ic, &xkey, buf, sizeof buf, &sym, NULL);
+					if (len > 0) {
+						const char* p = &buf[0];
+						int codepoint = gpudl_utf8_decode(&p, &len);
+						if (i == 0 && codepoint >= 0) {
+							// XXX unfuck some control-code shit; e.g. ctrl+a gives codepoint=1;
+							// cltr+z gives codepoint=0x1a; ctrl+8 gives 0x7f. when using the above
+							// string lookup to get the KeySym, it seems that at least I can trust
+							// shift+a to give sym='A' (whereas XLookupKeysym() yields 'a')
+							ke->codepoint =
+								((0 <= codepoint && codepoint < ' ') || codepoint == 0x7f)
+								? sym
+								: codepoint;
+							printf("i0 actual codepoint is %d\n", ke->codepoint);
+						} else {
+
+							printf("i%d (without %s) gives code point %d\n", i, what, codepoint);
 						}
+
+						// TODO set ke->modmask
+						#if 0
+						const int modifiers = ShiftMask + ControlMask + Mod1Mask + Mod2Mask + Mod3Mask + Mod4Mask + Mod5Mask;
+						if (xe.xkey.state & modifiers) {
+							char buf2[8];
+							for (;;) {
+								XKeyEvent xkey = xe.xkey;
+								int len2 = Xutf8LookupString(win->x11_ic, &xkey, buf2, sizeof buf2, NULL, NULL);
+								...
+							}
+						}
+						#endif
 					}
-					#endif
 				}
 			} else {
 				sym = XLookupKeysym(&xe.xkey, 0);

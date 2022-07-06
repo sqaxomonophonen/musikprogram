@@ -351,7 +351,6 @@ static void write_keypress(struct ui_window* uw, struct ui_keypress kp)
 void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 {
 	if (!uw) return;
-
 	const int code = ev->code;
 	const int modifier_index = modifier_from_keycode(code); // -1 if not a modifier
 	if (0 <= modifier_index && modifier_index < 32) {
