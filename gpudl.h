@@ -162,16 +162,26 @@ enum gpudl_system_cursor {
 	GPUDL_KEY(LSUPER) \
 	GPUDL_KEY(RSUPER)
 
-enum gpudl_keycode {
-	GK_UNKNOWN = -1,
+#define GMOD_SHIFT   (1<<0)
+#define GMOD_CTRL    (1<<1)
+#define GMOD_ALT     (1<<2)
+#define GMOD_SUPER   (1<<3)
 
-	GK_SPECIAL_BEGIN = 256,
+// U+E000–U+F8FF is the first Unicode "Private Use Area"
+#define GPUDL_PUA0_BEGIN 0xE000
+#define GPUDL_PUA0_END   0xF8FF
+#define GPUDL_IS_PUA0(x) (GPUDL_PUA0_BEGIN <= (x) && (x) <= GPUDL_PUA0_END)
+#define GPUDL_IS_SPECIAL(x) GPUDL_IS_PUA0(x)
+
+
+enum gpudl_special_keycode {
+	GK_UNKNOWN = -1,
+	GK_SPECIAL_BEGIN = GPUDL_PUA0_BEGIN,
 	#define GPUDL_KEY(K) GK_ ## K,
 	GPUDL_KEYS
 	#undef GPUDL_KEY
 	GK_SPECIAL_END,
 };
-
 
 struct gpudl_event_motion {
 	float x;
@@ -187,8 +197,9 @@ struct gpudl_event_button {
 
 struct gpudl_event_key {
 	int pressed;
-	int code;
+	int code; // XXX remove, since codepoint can contain e.g. GK_LEFT because it's in PUA0
 	int codepoint;
+	int modmask; // TODO populate
 };
 
 struct gpudl_event {
@@ -741,8 +752,44 @@ int gpudl_poll_event(struct gpudl_event* e)
 		case KeyPress:
 		case KeyRelease: {
 			e->type = GPUDL_KEY;
-			e->key.pressed = (xe.type == KeyPress);
-			KeySym sym = XLookupKeysym(&xe.xkey, 0);
+			struct gpudl_event_key* ke = &e->key;
+			ke->pressed = (xe.type == KeyPress);
+
+			KeySym sym = 0;
+			if (win && ke->pressed) {
+				char buf[8];
+				int len = Xutf8LookupString(win->x11_ic, &xe.xkey, buf, sizeof buf, &sym, NULL);
+				if (len > 0) {
+					const char* p = &buf[0];
+					int codepoint = gpudl_utf8_decode(&p, &len);
+					if (codepoint >= 0) {
+						// XXX unfuck some control-code shit; e.g. ctrl+a gives codepoint=1;
+						// cltr+z gives codepoint=0x1a; ctrl+8 gives 0x7f. when using the above
+						// string lookup to get the KeySym, it seems that at least I can trust
+						// shift+a to give sym='A' (whereas XLookupKeysym() yields 'a')
+						ke->codepoint =
+							((0 <= codepoint && codepoint < ' ') || codepoint == 0x7f)
+							? sym
+							: codepoint;
+					}
+
+					// TODO set ke->modmask
+					#if 0
+					const int modifiers = ShiftMask + ControlMask + Mod1Mask + Mod2Mask + Mod3Mask + Mod4Mask + Mod5Mask;
+					if (xe.xkey.state & modifiers) {
+						char buf2[8];
+						for (;;) {
+							XKeyEvent xkey = xe.xkey;
+							int len2 = Xutf8LookupString(win->x11_ic, &xkey, buf2, sizeof buf2, NULL, NULL);
+							...
+						}
+					}
+					#endif
+				}
+			} else {
+				sym = XLookupKeysym(&xe.xkey, 0);
+			}
+
 			int code = GK_UNKNOWN;
 			if (' ' <= sym && sym <= '~') {
 				// simple 1:1 key<->ascii mapping
@@ -793,16 +840,11 @@ int gpudl_poll_event(struct gpudl_event* e)
 				default:              code = GK_UNKNOWN; break;
 				}
 			}
-			e->key.code = code;
-			if (win && xe.type == KeyPress) {
-				char buf[8];
-				int len = Xutf8LookupString(win->x11_ic, &xe.xkey, buf, sizeof buf, NULL, NULL);
-				if (len > 0) {
-					const char* p = &buf[0];
-					int codepoint = gpudl_utf8_decode(&p, &len);
-					if (codepoint > 0) e->key.codepoint = codepoint;
-				}
-			}
+			ke->code = code;
+			#if 1
+			if (ke->pressed) printf("[#] st=%x code=%d cp=%d\n", xe.xkey.state, ke->code, ke->codepoint);
+			if (!ke->pressed) printf("[ ] st=%x code=%d cp=%d\n", xe.xkey.state, ke->code, ke->codepoint);
+			#endif
 			return 1;
 			} break;
 		case ClientMessage: {
