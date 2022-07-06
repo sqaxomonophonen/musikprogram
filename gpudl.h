@@ -197,9 +197,12 @@ struct gpudl_event_button {
 
 struct gpudl_event_key {
 	int pressed;
-	int code; // XXX remove, since codepoint can contain e.g. GK_LEFT because it's in PUA0
+	int code; // XXX remove
 	int codepoint;
 	int modmask; // TODO populate
+	// internal keycode; guaranteed to be the same for press/release of
+	// same key, whereas codepoint is not
+	int keycode;
 };
 
 struct gpudl_event {
@@ -753,6 +756,7 @@ int gpudl_poll_event(struct gpudl_event* e)
 		case KeyRelease: {
 			e->type = GPUDL_KEY;
 			struct gpudl_event_key* ke = &e->key;
+			ke->keycode = xe.xkey.keycode;
 			ke->pressed = (xe.type == KeyPress);
 
 			KeySym sym = 0;
