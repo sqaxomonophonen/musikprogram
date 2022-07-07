@@ -441,48 +441,68 @@ static void ti_delete(struct ui_text_input* ti, int is_backspace)
 
 int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* style, int flags, int width)
 {
-	// TODO handle mouse stuff here?
-	if (!has_keyboard_focus()) return 0;
-	struct ui_keypress* kp;
-	int n_handled = 0;
 	int emit_signal = 0;
-	while (ui_kpoll(&kp)) {
-		n_handled++;
-		int signal = 0;
-		if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\b' })) { // backspace
-			ti_delete(ti, 1);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_DELETE })) {
-			ti_delete(ti, 0);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_LEFT })) {
-			ti_move(ti, -1, 0);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_RIGHT })) {
-			ti_move(ti, 1, 0);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .keysym = GK_LEFT })) {
-			ti_move(ti, -1, 1);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .keysym = GK_RIGHT })) {
-			ti_move(ti, 1, 1);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_CTRL_MASK, .keysym = 'a' })) {
-			const int n = arrlen(ti->codepoints);
-			ti->cursor = n;
-			ti->select0 = 0;
-			ti->select1 = n;
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\r' })) {
-			signal = UI_SIGNAL_ENTER;
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\033' })) {
-			signal = UI_SIGNAL_ESCAPE;
-		} else if (kp->codepoint >= ' ') {
-			ti_delete_selection(ti);
-			arrins(ti->codepoints, ti->cursor, kp->codepoint);
-			ti_move(ti, 1, 0);
-		} else {
-			kp->keep = 1;
-			n_handled--;
-		}
-		// other keys?
-		//   tab? shift+tab? or is that a "widget manager problem"?
+	int n_handled = 0;
 
-		if (signal < emit_signal) emit_signal = signal;
+	// TODO handle mouse stuff here?
+
+	const int focus = has_keyboard_focus();
+
+	if (focus) {
+		struct ui_keypress* kp;
+		while (ui_kpoll(&kp)) {
+			n_handled++;
+			int signal = 0;
+			if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\b' })) { // backspace
+				ti_delete(ti, 1);
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_DELETE })) {
+				ti_delete(ti, 0);
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_LEFT })) {
+				ti_move(ti, -1, 0);
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_RIGHT })) {
+				ti_move(ti, 1, 0);
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .keysym = GK_LEFT })) {
+				ti_move(ti, -1, 1);
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .keysym = GK_RIGHT })) {
+				ti_move(ti, 1, 1);
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_CTRL_MASK, .keysym = 'a' })) {
+				const int n = arrlen(ti->codepoints);
+				ti->cursor = n;
+				ti->select0 = 0;
+				ti->select1 = n;
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\r' })) {
+				signal = UI_SIGNAL_ENTER;
+			} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\033' })) {
+				signal = UI_SIGNAL_ESCAPE;
+			} else if (kp->codepoint >= ' ') {
+				ti_delete_selection(ti);
+				arrins(ti->codepoints, ti->cursor, kp->codepoint);
+				ti_move(ti, 1, 0);
+			} else {
+				kp->keep = 1;
+				n_handled--;
+			}
+			// other keys?
+			//   tab? shift+tab? or is that a "widget manager problem"?
+
+			if (signal < emit_signal) emit_signal = signal;
+		}
 	}
+
+	r_begin(R_MODE_TILE);
+
+	rcol_plain(focus ? pma_alpha(1.0, 1.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3));
+
+	const int font_size = 40;
+
+	rt_3x3(T3x3(box), 0, 0, width, font_size + 10);
+
+	rt_font(R_FONT_MONOSPACE, font_size);
+	rt_goto(10, 40);
+	rt_print_codepoint_array(ti->codepoints, arrlen(ti->codepoints));
+
+	r_end();
+
 	return emit_signal != 0 ? emit_signal : n_handled;
 }
 

@@ -178,6 +178,7 @@ static void asset_pane_present(struct window* window, int right, float x)
 
 	rcol_plain(pma_alpha(0,0,0.4,1));
 	rt_quad(pad0+pad1,pad0+pad1,w-(pad0+pad1)*2,(pad0+pad1)*2);
+	r_end();
 
 	int sig = ui_text_input_handle(&pane->text_input, &style_asset_pane_text_input, 0, w);
 	if (sig) {
@@ -186,8 +187,6 @@ static void asset_pane_present(struct window* window, int right, float x)
 			window->overlay_assets = 0;
 		}
 	}
-
-	r_end();
 }
 
 static int overlay_wants_focus(struct window* window)

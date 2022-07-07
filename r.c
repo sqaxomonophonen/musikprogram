@@ -1171,16 +1171,14 @@ static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 	r->glyphdef_requests[index] = encode_glyphdef(bank, size, code);
 }
 
-void rt_printf(const char* fmt, ...)
+enum {
+	PRINT_UTF8 = 1,
+	PRINT_CODEPOINT_ARRAY,
+};
+
+static void rt_print_impl(int type, void* buffer, int n0)
 {
 	struct r* r = &rstate;
-
-	char buffer[1<<14];
-	va_list ap;
-	va_start(ap, fmt);
-	const int n0 = vsnprintf(buffer, sizeof buffer, fmt, ap);
-	va_end(ap);
-
 	const int px = r->font_px;
 	struct font* font = get_font_for_bank(r->font);
 	const float scale = stbtt_ScaleForPixelHeight(&font->info, px);
@@ -1192,10 +1190,27 @@ void rt_printf(const char* fmt, ...)
 	int cursor_y = r->font_cy;
 
 	const char* p = buffer;
+	const int* codepoints = buffer;
 	int n = n0;
 	int last_codepoint = -1;
 	for (;;) {
-		int codepoint = gpudl_utf8_decode(&p, &n);
+		int codepoint;
+
+		switch (type) {
+		case PRINT_UTF8:
+			codepoint = gpudl_utf8_decode(&p, &n);
+			break;
+		case PRINT_CODEPOINT_ARRAY:
+			if (n > 0) {
+				codepoint = codepoints[n0-n];
+			} else {
+				codepoint = -1;
+			}
+			n--;
+			break;
+		default: assert(!"invalid type");
+		}
+
 		if (codepoint < 0) break;
 
 		if (codepoint < ' ') {
@@ -1222,7 +1237,6 @@ void rt_printf(const char* fmt, ...)
 
 			if (w > 0 && h > 0) {
 				const int lsb = (int)roundf((float)left_side_bearing * scale);
-				//printf("plot %d at %d,%d %dx%d\n", codepoint, cursor_x + lsb, cursor_y + y0, w, h);
 				rt_put(rstate.font, rstate.font_px, codepoint, cursor_x + lsb, cursor_y + y0, w, h);
 			}
 
@@ -1233,6 +1247,21 @@ void rt_printf(const char* fmt, ...)
 
 	r->font_cx = cursor_x;
 	r->font_cy = cursor_y;
+}
+
+void rt_printf(const char* fmt, ...)
+{
+	char buffer[1<<14];
+	va_list ap;
+	va_start(ap, fmt);
+	const int n0 = vsnprintf(buffer, sizeof buffer, fmt, ap);
+	va_end(ap);
+	rt_print_impl(PRINT_UTF8, buffer, n0);
+}
+
+void rt_print_codepoint_array(int* codepoints, int n)
+{
+	rt_print_impl(PRINT_CODEPOINT_ARRAY, codepoints, n);
 }
 
 static int get_tile_px(enum r_tile t)
