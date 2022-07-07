@@ -2152,6 +2152,11 @@ int gpudl_poll_event(struct gpudl_event* e)
 							((0 <= codepoint && codepoint < ' ') || codepoint == 0x7f)
 							? fallback_sym
 							: codepoint;
+						// NOTE the use of `fallback_sym`; because it comes from Xutf8LookupString()
+						// (and NOT XLookupKeysym()) it's actually slightly closer to being "text input"
+						// because [shift]+[a] gives fallback_sym='A' with Xutf8LookupString(), but
+						// fallback_sym='a' with XLookupKeysym(). So this weird, crappy inconsistency
+						// actually proves useful here, "thanks".
 					}
 				}
 			}
