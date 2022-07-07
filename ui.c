@@ -493,7 +493,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		r_begin(R_MODE_TILE);
 
 		const union v4 color_frame = focus ? pma_alpha(1.0, 1.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3);
-		const union v4 color_text = focus ? pma_alpha(1.0, 1.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3);
+		const union v4 color_text = focus ? pma_alpha(3.0, 2.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3);
 		const union v4 color_selection = focus ? pma_alpha(0.0, 0.0, 1.0, 1.0) : pma_alpha(0.0, 0.0, 1.0, 0.3);
 		const union v4 color_cursor = focus ? pma_alpha(1.0, 1.0, 0.0, 1.0) : pma_alpha(1.0, 1.0, 0.0, 0.3);
 
@@ -519,7 +519,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 			rt_quad(x0, 0, x1-x0, px);
 		}
 
-		if (0 <= ti->cursor && ti->cursor <= n) {
+		if (focus && 0 <= ti->cursor && ti->cursor <= n) {
 			rcol_plain(color_cursor);
 			int x = ti->xpos[ti->cursor];
 			const int w = 1;
