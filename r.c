@@ -1174,9 +1174,10 @@ static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 enum {
 	PRINT_UTF8 = 1,
 	PRINT_CODEPOINT_ARRAY,
+	PRINT_CODEPOINT_ARRAY_XPOS,
 };
 
-static void rt_print_impl(int type, void* buffer, int n0)
+static void rt_print_impl(int type, void* buffer, int n0, int* write)
 {
 	struct r* r = &rstate;
 	const int px = r->font_px;
@@ -1194,6 +1195,7 @@ static void rt_print_impl(int type, void* buffer, int n0)
 	int n = n0;
 	int last_codepoint = -1;
 	for (;;) {
+		const int i = n0-n;
 		int codepoint;
 
 		switch (type) {
@@ -1201,8 +1203,9 @@ static void rt_print_impl(int type, void* buffer, int n0)
 			codepoint = gpudl_utf8_decode(&p, &n);
 			break;
 		case PRINT_CODEPOINT_ARRAY:
+		case PRINT_CODEPOINT_ARRAY_XPOS:
 			if (n > 0) {
-				codepoint = codepoints[n0-n];
+				codepoint = codepoints[i];
 			} else {
 				codepoint = -1;
 			}
@@ -1235,9 +1238,16 @@ static void rt_print_impl(int type, void* buffer, int n0)
 			const int w = x1-x0;
 			const int h = y1-y0;
 
+			int xpos = cursor_x;
 			if (w > 0 && h > 0) {
 				const int lsb = (int)roundf((float)left_side_bearing * scale);
-				rt_put(rstate.font, rstate.font_px, codepoint, cursor_x + lsb, cursor_y + y0, w, h);
+				if (type != PRINT_CODEPOINT_ARRAY_XPOS) {
+					rt_put(rstate.font, rstate.font_px, codepoint, cursor_x + lsb, cursor_y + y0, w, h);
+				}
+				xpos += lsb;
+			}
+			if (type == PRINT_CODEPOINT_ARRAY_XPOS) {
+				write[i] = xpos;
 			}
 
 			cursor_x += dx;
@@ -1245,8 +1255,14 @@ static void rt_print_impl(int type, void* buffer, int n0)
 		}
 	}
 
-	r->font_cx = cursor_x;
-	r->font_cy = cursor_y;
+	if (type == PRINT_CODEPOINT_ARRAY_XPOS) {
+		write[n0] = cursor_x;
+	}
+
+	if (type != PRINT_CODEPOINT_ARRAY_XPOS) {
+		r->font_cx = cursor_x;
+		r->font_cy = cursor_y;
+	}
 }
 
 void rt_printf(const char* fmt, ...)
@@ -1256,12 +1272,17 @@ void rt_printf(const char* fmt, ...)
 	va_start(ap, fmt);
 	const int n0 = vsnprintf(buffer, sizeof buffer, fmt, ap);
 	va_end(ap);
-	rt_print_impl(PRINT_UTF8, buffer, n0);
+	rt_print_impl(PRINT_UTF8, buffer, n0, NULL);
 }
 
 void rt_print_codepoint_array(int* codepoints, int n)
 {
-	rt_print_impl(PRINT_CODEPOINT_ARRAY, codepoints, n);
+	rt_print_impl(PRINT_CODEPOINT_ARRAY, codepoints, n, NULL);
+}
+
+void rt_xpos_codepoint_array(int* xpos, int* codepoints, int n)
+{
+	rt_print_impl(PRINT_CODEPOINT_ARRAY_XPOS, codepoints, n, xpos);
 }
 
 static int get_tile_px(enum r_tile t)

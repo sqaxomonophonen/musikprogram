@@ -448,7 +448,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 	const int focus = has_keyboard_focus();
 
-	if (focus) {
+	if (focus) { // handle keyboard input
 		struct ui_keypress* kp;
 		while (ui_kpoll(&kp)) {
 			n_handled++;
@@ -489,19 +489,48 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		}
 	}
 
-	r_begin(R_MODE_TILE);
+	{ // render
+		r_begin(R_MODE_TILE);
 
-	rcol_plain(focus ? pma_alpha(1.0, 1.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3));
+		const union v4 color_frame = focus ? pma_alpha(1.0, 1.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3);
+		const union v4 color_text = focus ? pma_alpha(1.0, 1.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3);
+		const union v4 color_selection = focus ? pma_alpha(0.0, 0.0, 1.0, 1.0) : pma_alpha(0.0, 0.0, 1.0, 0.3);
+		const union v4 color_cursor = focus ? pma_alpha(1.0, 1.0, 0.0, 1.0) : pma_alpha(1.0, 1.0, 0.0, 0.3);
 
-	const int font_size = 40;
+		const int font_size = 40;
 
-	rt_3x3(T3x3(box), 0, 0, width, font_size + 10);
+		rcol_plain(color_frame);
 
-	rt_font(R_FONT_MONOSPACE, font_size);
-	rt_goto(10, 40);
-	rt_print_codepoint_array(ti->codepoints, arrlen(ti->codepoints));
+		rt_3x3(T3x3(box), 0, 0, width, font_size + 10);
 
-	r_end();
+		rt_font(R_FONT_MONOSPACE, font_size);
+		rt_goto(10, 40);
+		const int n = arrlen(ti->codepoints);
+		arrsetlen(ti->xpos, n+1);
+		rt_xpos_codepoint_array(ti->xpos, ti->codepoints, n);
+
+		int s0, s1;
+		if (ti_get_selection(ti, &s0, &s1)) {
+			assert(0 <= s0 && s0 <= n);
+			assert(0 <= s1 && s1 <= n);
+			rcol_plain(color_selection);
+			int x0 = ti->xpos[s0];
+			int x1 = ti->xpos[s1];
+			rt_quad(x0, 0, x1-x0, font_size);
+		}
+
+		if (0 <= ti->cursor && ti->cursor <= n) {
+			rcol_plain(color_cursor);
+			int x = ti->xpos[ti->cursor];
+			const int w = 1;
+			rt_quad(x-w, 0, 2*w, font_size);
+		}
+
+		rcol_plain(color_text);
+		rt_print_codepoint_array(ti->codepoints, n);
+
+		r_end();
+	}
 
 	return emit_signal != 0 ? emit_signal : n_handled;
 }

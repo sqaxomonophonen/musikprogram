@@ -60,6 +60,7 @@ struct ui_window {
 
 struct ui_text_input {
 	int* codepoints;
+	int* xpos;
 	int cursor;
 	int select0, select1;
 };
