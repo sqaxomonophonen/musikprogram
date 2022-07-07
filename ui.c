@@ -28,9 +28,9 @@ struct uistate {
 
 } uistate;
 
-static int modifier_from_keycode(int keycode)
+static int modifier_from_keysym(int keysym)
 {
-	switch (keycode) {
+	switch (keysym) {
 	#define MOD(M) \
 	case GK_L##M: return UI_L##M; \
 	case GK_R##M: return UI_R##M;
@@ -43,7 +43,7 @@ static int modifier_from_keycode(int keycode)
 #if 0
 static int keycode_is_modifier(int keycode)
 {
-	return modifier_from_keycode(keycode) != -1;
+	return modifier_from_keysym(keycode) != -1;
 }
 #endif
 
@@ -271,12 +271,12 @@ static int modmaskmatch(int pressed_modifiers_mask, int match_mask)
 static int shortcut_match(struct ui_keypress k, struct ui_keypress s)
 {
 	if (!modmaskmatch(k.modmask, s.modmask)) return 0;
-	return k.is_codepoint == s.is_codepoint && k.code == s.code;
+	return k.keysym == s.keysym;
 }
 
 int ui_shortcut(struct ui_keypress s)
 {
-	if (s.code == 0) return 0;
+	if (s.keysym == 0) return 0;
 	if (!has_keyboard_focus()) return 0;
 	struct ui_window* uw = get_uw();
 
@@ -295,7 +295,7 @@ int ui_shortcut(struct ui_keypress s)
 
 int ui_key(int codepoint)
 {
-	return ui_shortcut((struct ui_keypress) { .is_codepoint = 1, .code = codepoint });
+	return ui_shortcut((struct ui_keypress) { .keysym = codepoint });
 }
 
 int ui_read_keypress(struct ui_keypress* kp)
@@ -344,15 +344,15 @@ static inline int region_intersect(struct region a, struct region b)
 static void write_keypress(struct ui_window* uw, struct ui_keypress kp)
 {
 	if (uw->n_keypresses >= UI_KEYPRESSES_MAX) return;
-	kp.modmask = uw->modmask;
 	uw->keypresses[uw->n_keypresses++] = kp;
 }
 
 void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 {
 	if (!uw) return;
-	const int code = ev->code;
-	const int modifier_index = modifier_from_keycode(code); // -1 if not a modifier
+
+	const int keysym = ev->keysym;
+	const int modifier_index = modifier_from_keysym(keysym); // -1 if not a modifier
 	if (0 <= modifier_index && modifier_index < 32) {
 		const int mask = 1 << modifier_index;
 		if (ev->pressed) {
@@ -361,16 +361,11 @@ void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev)
 			uw->modmask &= ~mask;
 		}
 	} else if (modifier_index == -1 && ev->pressed) {
-		if (ev->codepoint > 0 && ev->codepoint != 0x7f) {
-			write_keypress(uw, (struct ui_keypress){
-				.is_codepoint = 1,
-				.code = ev->codepoint,
-			});
-		} else if (code > 0) {
-			write_keypress(uw, (struct ui_keypress){
-				.code = code,
-			});
-		}
+		write_keypress(uw, (struct ui_keypress){
+			.modmask = uw->modmask,
+			.keysym = ev->keysym,
+			.codepoint = ev->codepoint,
+		});
 	}
 }
 
@@ -452,26 +447,26 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 	int n_handled = 0;
 	while (ui_kpoll(&kp)) {
 		n_handled++;
-		if (shortcut_match(*kp, (struct ui_keypress) { .is_codepoint = 1, .code = '\b' })) { // backspace
+		if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\b' })) { // backspace
 			ti_delete(ti, 1);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .code = GK_DELETE })) {
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_DELETE })) {
 			ti_delete(ti, 0);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .code = GK_LEFT })) {
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_LEFT })) {
 			ti_move(ti, -1, 0);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .code = GK_RIGHT })) {
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_RIGHT })) {
 			ti_move(ti, 1, 0);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .code = GK_LEFT })) {
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .keysym = GK_LEFT })) {
 			ti_move(ti, -1, 1);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .code = GK_RIGHT })) {
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .keysym = GK_RIGHT })) {
 			ti_move(ti, 1, 1);
-		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_CTRL_MASK, .is_codepoint = 1, .code = 1 /*'a'*/ })) { // XXX gpudl bug: ctrl+a gives codepoint 1?!
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_CTRL_MASK, .keysym = 'a' })) {
 			const int n = arrlen(ti->codepoints);
 			ti->cursor = n;
 			ti->select0 = 0;
 			ti->select1 = n;
-		} else if (kp->is_codepoint && kp->code >= ' ') {
+		} else if (kp->codepoint >= ' ') {
 			ti_delete_selection(ti);
-			arrins(ti->codepoints, ti->cursor, kp->code);
+			arrins(ti->codepoints, ti->cursor, kp->codepoint);
 			ti_move(ti, 1, 0);
 		} else {
 			kp->keep = 1;

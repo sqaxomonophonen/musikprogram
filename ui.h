@@ -37,10 +37,10 @@ struct ui_mbtn {
 };
 
 struct ui_keypress {
-	uint32_t code         :30;
-	uint32_t is_codepoint : 1; // otherwise gpudl keycode
-	uint32_t keep         : 1;
-	uint32_t modmask;
+	uint32_t modmask:31;
+	uint32_t keep:1;
+	int keysym;
+	int codepoint;
 };
 
 #define UI_KEYPRESSES_MAX (32)

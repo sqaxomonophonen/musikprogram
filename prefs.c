@@ -381,14 +381,12 @@ static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_keypress 
 		if (r == BAD_VALUE) return BAD_VALUE;
 		int len = strlen(buf);
 		if (len == 1 && buf[0] < '~') {
-			if (sc->code) return BAD_VALUE;
-			sc->code = buf[0];
-			sc->is_codepoint = 1;
+			if (sc->keysym) return BAD_VALUE;
+			sc->keysym = buf[0];
 		} else if (len > 1 && buf[0] < 0) {
 			const char* p = buf;
 			int n = len;
-			sc->code = gpudl_utf8_decode(&p, &n);
-			sc->is_codepoint = 1;
+			sc->keysym = gpudl_utf8_decode(&p, &n);
 			if (n != 0) return BAD_VALUE;
 		} else if (len == 4 && memcmp(buf, "*OR*", 4) == 0) {
 			sci++;
@@ -397,11 +395,11 @@ static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_keypress 
 			continue;
 		} else {
 			int modmask = str2modmask(buf);
-			if (sc->code) return BAD_VALUE; // modifier after key
+			if (sc->keysym) return BAD_VALUE; // modifier after key
 			if (modmask != 0) {
 				sc->modmask |= modmask;
 			} else {
-				#define GPUDL_KEY(NAME) if (len == strlen(#NAME) && memcmp(buf, #NAME, strlen(#NAME)) == 0) sc->code = GK_ ## NAME;
+				#define GPUDL_KEY(NAME) if (len == strlen(#NAME) && memcmp(buf, #NAME, strlen(#NAME)) == 0) sc->keysym = GK_ ## NAME;
 				GPUDL_KEYS
 				#undef GPUDL_KEY
 			}

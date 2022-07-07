@@ -193,8 +193,6 @@ static int overlay_wants_focus(struct window* window)
 
 static void focus_blurp(const char* what, float offset)
 {
-	struct ui_keypress* kp;
-	while (ui_kpoll(&kp)) printf("%s KEYPRESS \"%d\"\n", what, kp->code);
 	r_begin(R_MODE_TILE);
 	rcol_plain(ui_focused()
 		? pma_alpha(0,4,0,0.5)
@@ -352,8 +350,6 @@ static void window_present(struct window* window)
 
 	ui_enter_group(x1, 0, w-x1, h, CLIP, &window->grp_graph);
 	graph_present(window);
-	struct ui_keypress* kp;
-	while (ui_kpoll(&kp)) printf("GRAPH KEYPRESS \"%d\"\n", kp->code);
 	focus_blurp("GRAPH", 10);
 	ui_leave();
 
