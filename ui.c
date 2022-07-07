@@ -444,8 +444,6 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 	int emit_signal = 0;
 	int n_handled = 0;
 
-	// TODO handle mouse stuff here?
-
 	const int focus = has_keyboard_focus();
 
 	if (focus) { // handle keyboard input
@@ -531,6 +529,9 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 		r_end();
 	}
+
+	// TODO handle mouse input here; ti->xpos was repopulated above, which
+	// is required for press (set cursor) and drag (set selection) stuff
 
 	return emit_signal != 0 ? emit_signal : n_handled;
 }
