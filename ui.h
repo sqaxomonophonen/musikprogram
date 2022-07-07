@@ -91,6 +91,9 @@ union v2 ui_mpos();
 int ui_clicked(enum gpudl_button button);
 int ui_down(enum gpudl_button button);
 
+#define UI_SIGNAL_ENTER  (-1)
+#define UI_SIGNAL_ESCAPE (-2)
+
 void ui_window_key_event(struct ui_window* uw, struct gpudl_event_key* ev);
 int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* style, int flags, int width);
 void ui_text_input_debug(struct ui_text_input* ti);

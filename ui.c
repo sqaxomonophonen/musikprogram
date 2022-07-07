@@ -445,8 +445,10 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 	if (!has_keyboard_focus()) return 0;
 	struct ui_keypress* kp;
 	int n_handled = 0;
+	int emit_signal = 0;
 	while (ui_kpoll(&kp)) {
 		n_handled++;
+		int signal = 0;
 		if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\b' })) { // backspace
 			ti_delete(ti, 1);
 		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = GK_DELETE })) {
@@ -464,6 +466,10 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 			ti->cursor = n;
 			ti->select0 = 0;
 			ti->select1 = n;
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\r' })) {
+			signal = UI_SIGNAL_ENTER;
+		} else if (shortcut_match(*kp, (struct ui_keypress) { .keysym = '\033' })) {
+			signal = UI_SIGNAL_ESCAPE;
 		} else if (kp->codepoint >= ' ') {
 			ti_delete_selection(ti);
 			arrins(ti->codepoints, ti->cursor, kp->codepoint);
@@ -474,9 +480,10 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		}
 		// other keys?
 		//   tab? shift+tab? or is that a "widget manager problem"?
-		//   enter? escape? do what, send a signal, hmm?
+
+		if (signal < emit_signal) emit_signal = signal;
 	}
-	return n_handled;
+	return emit_signal != 0 ? emit_signal : n_handled;
 }
 
 void ui_text_input_debug(struct ui_text_input* ti)
