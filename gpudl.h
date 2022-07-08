@@ -231,6 +231,7 @@ int gpudl_utf8_decode(const char** c0z, int* n);
 #include <string.h>
 
 #include <dlfcn.h>
+#include <locale.h>
 
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
@@ -365,6 +366,12 @@ void gpudl_init()
 	gpudl__runtime.wgpu_present_mode = WGPUPresentMode_Fifo; // XXX
 
 	gpudl__runtime.limits.maxBindGroups = 4;
+
+	// this inconspicuous boilerplate line seems to have weird and deep
+	// implications for keyboard input:
+	//   without setlocale():   [compose],[a],[e] => "æ", [compose],[a],[a] => "å", [compose],[o],[a] => no KeyPress event at all
+	//   with setlocale():      [compose],[a],[e] => "æ", [compose],[a],[a] => "å", [compose],[o],[a] => "å"
+	setlocale(LC_ALL, "");
 
 	XSetErrorHandler(gpudl__x_error_handler);
 	XInitThreads();
@@ -580,12 +587,9 @@ int gpudl_window_open(const char* title)
 
 	win->x11_ic = XCreateIC(
 		gpudl__runtime.x11_im,
-		XNInputStyle,
-		XIMPreeditNothing | XIMStatusNothing,
-		XNClientWindow,
-		win->x11_window,
-		XNFocusWindow,
-		win->x11_window,
+		XNInputStyle,      XIMPreeditNothing | XIMStatusNothing,
+		XNClientWindow,    win->x11_window,
+		XNFocusWindow,     win->x11_window,
 		NULL);
 	assert(win->x11_ic != NULL);
 
@@ -720,9 +724,11 @@ int gpudl_poll_event(struct gpudl_event* e)
 			return 1;
 		case FocusIn:
 			e->type = GPUDL_FOCUS;
+			if (xe.xfocus.mode != NotifyGrab && win && win->x11_ic) XSetICFocus(win->x11_ic);
 			return 1;
 		case FocusOut:
 			e->type = GPUDL_UNFOCUS;
+			if (xe.xfocus.mode != NotifyGrab && win && win->x11_ic) XUnsetICFocus(win->x11_ic);
 			return 1;
 		case ButtonPress:
 		case ButtonRelease: {
