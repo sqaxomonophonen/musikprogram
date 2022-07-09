@@ -544,18 +544,23 @@ static void glyph_raster(stbrp_rect* r)
 
 static int patch_tile_uvs(int n_quads)
 {
-	struct r* r = &rstate;
-	struct tile_atlas* a = &r->tile_atlas;
-	struct tile_vtx* pv = (struct tile_vtx*)(r->vtxbuf_data + r->cursor0);
+	struct r* rs = &rstate;
+	struct tile_atlas* a = &rs->tile_atlas;
+	struct tile_vtx* pv = (struct tile_vtx*)(rs->vtxbuf_data + rs->cursor0);
 	int n_missing = 0;
-	for (int i = 0; i < n_quads; i++) {
-		const union glyphdef glyphdef = r->glyphdef_requests[i];
+	for (int i = 0; i < n_quads; i++, pv += 4) {
+		const union glyphdef glyphdef = rs->glyphdef_requests[i];
+		if (glyphdef.u32 == -1) continue;
 		const int glyph_index = get_glyph_index(glyphdef);
 		if (glyph_index < 0) {
-			r->missing_glyphdefs[n_missing++] = glyphdef;
+			rs->missing_glyphdefs[n_missing++] = glyphdef;
 		} else {
-			stbrp_rect* r = &a->rects_arr[glyph_index];
+			// prevent vertices from being patched twice (the
+			// operation is not idempotent). 1-frame weirdness may
+			// still occur if the atlas is reset midframe.
+			rs->glyphdef_requests[i].u32 = -1;
 
+			stbrp_rect* r = &a->rects_arr[glyph_index];
 			float u = r->x;
 			float v = r->y;
 			float w, h;
@@ -580,7 +585,6 @@ static int patch_tile_uvs(int n_quads)
 				);
 			}
 		}
-		pv += 4;
 	}
 	return n_missing;
 }
