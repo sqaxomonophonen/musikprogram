@@ -1767,7 +1767,7 @@ void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQ
 	font_init(&rstate.font_monospace, fontdata_mono, 0);
 	font_init(&rstate.font_variable, fontdata_variable, 0);
 
-	rstate.postproc.type = PP_GAUSS;
+	rstate.postproc.type = PP_NONE;
 
 	{
 		// prepare "static quads index buffer"; see
