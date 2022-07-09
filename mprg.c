@@ -194,16 +194,6 @@ static int overlay_wants_focus(struct window* window)
 	return !!window->overlay_assets;
 }
 
-static void focus_blurp(const char* what, float offset)
-{
-	r_begin(R_MODE_TILE);
-	rcol_plain(ui_focused()
-		? pma_alpha(0,4,0,0.5)
-		: pma_alpha(4,0,0,0.5));
-	rt_quad(offset, offset, 10, 10);
-	r_end();
-}
-
 static float curve_in_sin(float x)
 {
 	if (x < 0.0f) return 0.0f;
@@ -262,7 +252,6 @@ static void overlay_present(struct window* window)
 					ui_enter_group(w2+right_dx,0+right_dy,w2,h,CLIP,&window->grp_assets_right);
 				}
 				asset_pane_present(window, ii, x);
-				focus_blurp(ii == 0 ? "ASSETS LEFT" : "ASSETS RIGHT", 30);
 				ui_leave();
 			}
 		}
@@ -341,12 +330,10 @@ static void window_present(struct window* window)
 
 	ui_enter_group(0, 0, x1, h, CLIP, &window->grp_tracker);
 	tracker_present(window);
-	focus_blurp("TRACKER", 10);
 	ui_leave();
 
 	ui_enter_group(x1, 0, w-x1, h, CLIP, &window->grp_graph);
 	graph_present(window);
-	focus_blurp("GRAPH", 10);
 	ui_leave();
 
 	ui_leave();
