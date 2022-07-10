@@ -400,10 +400,21 @@ static void ti_trim(struct ui_text_input* ti)
 
 static void ti_move(struct ui_text_input* ti, int delta, int is_selecting)
 {
-	ti->cursor += delta;
 	if (is_selecting) {
+		ti->cursor += delta;
 		ti->select1 = ti->cursor;
 	} else {
+		int s0, s1;
+		int nsel = ti_get_selection(ti, &s0, &s1);
+		if (nsel) {
+			if (delta < 0) {
+				ti->cursor = s0;
+			} else if (delta > 0) {
+				ti->cursor = s1;
+			}
+		} else {
+			ti->cursor += delta;
+		}
 		ti->select0 = ti->select1 = ti->cursor;
 	}
 	ti_trim(ti);
