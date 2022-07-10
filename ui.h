@@ -68,7 +68,15 @@ struct ui_text_input {
 struct ui_style_text_input {
 	enum r_font font;
 	int font_px;
-	// TODO
+	int x_padding;
+	int y_padding;
+	#if 0
+	int color_bg;
+	int color_border;
+	int color_text;
+	int color_selection;
+	int color_cursor;
+	#endif
 };
 
 void ui_begin(struct ui_window* uw);

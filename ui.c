@@ -487,6 +487,8 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		}
 	}
 
+	const int height = style->font_px + 2*style->y_padding;
+
 	{ // render
 		r_begin(R_MODE_TILE);
 
@@ -499,10 +501,13 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 		rcol_plain(color_frame);
 
-		rt_3x3(T3x3(box), 0, 0, width, px + 10);
+		rt_3x3(T3x3(box), 0, 0, width, height);
+
+		const int y0 = style->y_padding;
+		const int y1 = height - style->y_padding;
 
 		rt_font(style->font, px);
-		rt_goto(10, 40);
+		rt_goto(style->x_padding, y1);
 		const int n = arrlen(ti->codepoints);
 		arrsetlen(ti->xpos, n+1);
 		rt_xpos_codepoint_array(ti->xpos, ti->codepoints, n);
@@ -514,14 +519,14 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 			rcol_plain(color_selection);
 			int x0 = ti->xpos[s0];
 			int x1 = ti->xpos[s1];
-			rt_quad(x0, 0, x1-x0, px);
+			rt_quad(x0, y0, x1-x0, y1-y0);
 		}
 
 		if (focus && 0 <= ti->cursor && ti->cursor <= n) {
 			rcol_plain(color_cursor);
 			int x = ti->xpos[ti->cursor];
 			const int w = 1;
-			rt_quad(x-w, 0, 2*w, px);
+			rt_quad(x-w, y0, 2*w, y1-y0);
 		}
 
 		rcol_plain(color_text);
