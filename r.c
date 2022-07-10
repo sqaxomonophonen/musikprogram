@@ -1175,6 +1175,15 @@ static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 	r->glyphdef_requests[index] = encode_glyphdef(bank, size, code);
 }
 
+
+void r_get_font_v_metrics(enum r_font font, int px, int* ascent, int* descent)
+{
+	struct font* f = get_font_for_bank(font);
+	const float scale = stbtt_ScaleForPixelHeight(&f->info, px);
+	if (ascent) *ascent = (int)roundf(scale * (float)f->ascent);
+	if (descent) *descent = (int)roundf(scale * (float)f->descent);
+}
+
 enum {
 	PRINT_UTF8 = 1,
 	PRINT_CODEPOINT_ARRAY,

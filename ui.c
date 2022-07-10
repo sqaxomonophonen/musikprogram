@@ -487,7 +487,9 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		}
 	}
 
-	const int height = style->font_px + 2*style->y_padding;
+	int ascent, descent;
+	r_get_font_v_metrics(style->font, style->font_px, &ascent, &descent);
+	const int height = ascent + 2*style->y_padding;
 
 	{ // render
 		r_begin(R_MODE_TILE);
@@ -497,8 +499,6 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		const union v4 color_selection = focus ? pma_alpha(0.0, 0.0, 1.0, 1.0) : pma_alpha(0.0, 0.0, 1.0, 0.3);
 		const union v4 color_cursor = focus ? pma_alpha(1.0, 1.0, 0.0, 1.0) : pma_alpha(1.0, 1.0, 0.0, 0.3);
 
-		const int px = style->font_px;
-
 		rcol_plain(color_frame);
 
 		rt_3x3(T3x3(box), 0, 0, width, height);
@@ -506,8 +506,8 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		const int y0 = style->y_padding;
 		const int y1 = height - style->y_padding;
 
-		rt_font(style->font, px);
 		rt_goto(style->x_padding, y1);
+		rt_font(style->font, style->font_px);
 		const int n = arrlen(ti->codepoints);
 		arrsetlen(ti->xpos, n+1);
 		rt_xpos_codepoint_array(ti->xpos, ti->codepoints, n);

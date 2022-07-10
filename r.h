@@ -103,6 +103,7 @@ void rcol_ygrad(union v4 color0, union v4 color1);
 void r_offset(int x0, int y0);
 void r_clip(int x, int y, int w, int h);
 
+void r_get_font_v_metrics(enum r_font font, int px, int* ascent, int* descent);
 
 // R_MODE_VECTOR
 void rv_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2);
