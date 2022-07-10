@@ -1303,10 +1303,10 @@ static int get_tile_px(enum r_tile t)
 	return 8; // TODO tile group size configuration, or at least return default
 }
 
-void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
+int rt_get_3x3_inner_dim(enum r_tile t00, int* width, int* height)
 {
-	assert(0 <= t00 && t00 < RT_END);
-	const int px = get_tile_px(t00);
+	assert(RT_NONE <= t00 && t00 < RT_END);
+	if (t00 <= RT_NONE) return 0;
 
 	const float wu = tile_dimensions_in_units[t00][0];
 	const float hu = tile_dimensions_in_units[t00][1];
@@ -1331,8 +1331,19 @@ void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
 	assert(hu  == tile_dimensions_in_units[t00+7][1]);
 	assert(hu  == tile_dimensions_in_units[t00+8][1]);
 
-	const int wpx = getpx(wu, px);
-	const int hpx = getpx(hu, px);
+	const int px = get_tile_px(t00);
+
+	if (width) *width = getpx(wu, px);
+	if (height) *height = getpx(hu, px);
+
+	return 1;
+}
+
+void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
+{
+	int wpx, hpx;
+	if (!rt_get_3x3_inner_dim(t00, &wpx, &hpx)) return;
+
 	assert((wpx >= 1) && (hpx >= 1));
 
 	const int midw = w-2*wpx;
@@ -1340,6 +1351,7 @@ void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
 
 	const int bank = R_TILES;
 
+	const int px = get_tile_px(t00);
 	if (midw < 0 || midh < 0) {
 		// no room for corners; just plot the middle
 		rt_put(bank, px, t00+4, x, y, w, h);

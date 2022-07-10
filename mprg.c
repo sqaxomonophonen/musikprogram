@@ -348,11 +348,12 @@ static void window_present(struct window* window)
 static void init_styles()
 {
 	{
-		struct ui_style_text_input* i = &style_asset_pane_text_input;
-		i->font = R_FONT_VARIABLE;
-		i->font_px = 40;
-		i->x_padding = 14;
-		i->y_padding = 10;
+		struct ui_style_text_input* st = &style_asset_pane_text_input;
+		st->font = R_FONT_VARIABLE;
+		st->font_px = 40;
+		st->x_padding = 14;
+		st->y_padding = 3;
+		st->border3x3 = T3x3(box);
 	}
 }
 

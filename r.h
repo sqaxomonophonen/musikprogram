@@ -121,6 +121,7 @@ void rt_goto(int cx, int cy);
 void rt_printf(const char* fmt, ...);
 void rt_print_codepoint_array(int* codepoints, int n);
 void rt_xpos_codepoint_array(int* xpos, int* codepoints, int n); // xpos must be n+1 long
+int rt_get_3x3_inner_dim(enum r_tile t00, int* width, int* height);
 void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
 void rt_clear(void);

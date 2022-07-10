@@ -70,6 +70,7 @@ struct ui_style_text_input {
 	int font_px;
 	int x_padding;
 	int y_padding;
+	enum r_tile border3x3;
 	#if 0
 	int color_bg;
 	int color_border;

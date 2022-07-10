@@ -498,9 +498,13 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		}
 	}
 
+	int inner_w = 0;
+	int inner_h = 0;
+	const int got_border = rt_get_3x3_inner_dim(style->border3x3, &inner_w, &inner_h);
+
 	int ascent, descent;
 	r_get_font_v_metrics(style->font, style->font_px, &ascent, &descent);
-	const int height = ascent + 2*style->y_padding;
+	const int outer_height = ascent + 2*style->y_padding + 2*inner_h;
 
 	{ // render
 		r_begin(R_MODE_TILE);
@@ -512,10 +516,13 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 		rcol_plain(color_frame);
 
-		rt_3x3(T3x3(box), 0, 0, width, height);
+		if (got_border) {
+			rt_3x3(style->border3x3, 0, 0, width, outer_height);
+		}
 
-		const int y0 = style->y_padding;
-		const int y1 = height - style->y_padding;
+		const int y0 = inner_h + style->y_padding;
+		const int y1 = outer_height - y0; /*(inner_h + style->y_padding);*/
+		const int dy = y1-y0;
 
 		rt_goto(style->x_padding, y1);
 		rt_font(style->font, style->font_px);
@@ -530,14 +537,14 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 			rcol_plain(color_selection);
 			int x0 = ti->xpos[s0];
 			int x1 = ti->xpos[s1];
-			rt_quad(x0, y0, x1-x0, y1-y0);
+			rt_quad(x0, y0, x1-x0, dy);
 		}
 
 		if (focus && 0 <= ti->cursor && ti->cursor <= n) {
 			rcol_plain(color_cursor);
 			int x = ti->xpos[ti->cursor];
 			const int w = 1;
-			rt_quad(x-w, y0, 2*w, y1-y0);
+			rt_quad(x-w, y0, 2*w, dy);
 		}
 
 		rcol_plain(color_text);
