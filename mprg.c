@@ -351,7 +351,7 @@ static void init_styles()
 		struct ui_style_text_input* st = &style_asset_pane_text_input;
 		st->font = R_FONT_VARIABLE;
 		st->font_px = 40;
-		st->x_padding = 14;
+		st->x_padding = 3;
 		st->y_padding = 3;
 		st->border3x3 = T3x3(box);
 	}

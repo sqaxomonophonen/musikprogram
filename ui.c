@@ -524,7 +524,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		const int y1 = outer_height - y0; /*(inner_h + style->y_padding);*/
 		const int dy = y1-y0;
 
-		rt_goto(style->x_padding, y1);
+		rt_goto(inner_w + style->x_padding, y1);
 		rt_font(style->font, style->font_px);
 		const int n = arrlen(ti->codepoints);
 		arrsetlen(ti->xpos, n+1);
