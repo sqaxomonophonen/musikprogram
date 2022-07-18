@@ -174,10 +174,10 @@ static void asset_pane_present(struct window* window, int right, float x)
 	ui_dim(&w,&h);
 
 	r_begin(R_MODE_TILE);
-	const float s = 0.03f;
+	const float s = 0.01f;
 	//rcol_plain(pma_alpha(s,s,s*1.5f,lerp(x, 0, 0.9)));
-	rcol_plain(pma_alpha(s,s,s, 0.9));
-	rt_quad(0,0,w,h);
+	rcol_plain(pma_alpha(s,s,s, 0.95));
+	rt_3x3(T3x3(rbox), 0,0,w,h);
 	r_end();
 
 	const int pad1 = 8;
@@ -360,7 +360,8 @@ static void init_styles()
 		st->font_px = 40;
 		st->x_padding = 3;
 		st->y_padding = 3;
-		st->bg3x3 = T3x3(box);
+		st->bg3x3 = T3x3(rbox);
+		st->border3x3 = T3x3(rbox_border);
 	}
 }
 
