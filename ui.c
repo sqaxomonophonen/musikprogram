@@ -470,7 +470,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 	int inner_w = 0;
 	int inner_h = 0;
-	const int got_border = rt_get_3x3_inner_dim(style->border3x3, &inner_w, &inner_h);
+	const int got_border = rt_get_3x3_inner_dim(style->bg3x3, &inner_w, &inner_h);
 
 	int ascent, descent;
 	r_get_font_v_metrics(style->font, style->font_px, &ascent, &descent);
@@ -524,15 +524,14 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 	{ // render
 		r_begin(R_MODE_TILE);
 
-		const union v4 color_frame = focus ? pma_alpha(1.0, 1.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3);
+		const union v4 color_frame = pma_alpha(0.0, 0.0, 0.0, 0.8);
 		const union v4 color_text = focus ? pma_alpha(3.0, 2.0, 1.0, 1.0) : pma_alpha(1.0, 1.0, 1.0, 0.3);
 		const union v4 color_selection = focus ? pma_alpha(0.0, 0.0, 1.0, 1.0) : pma_alpha(0.0, 0.0, 1.0, 0.3);
 		const union v4 color_cursor = focus ? pma_alpha(1.0, 1.0, 0.0, 1.0) : pma_alpha(1.0, 1.0, 0.0, 0.3);
 
-		rcol_plain(color_frame);
-
 		if (got_border) {
-			rt_3x3(style->border3x3, 0, 0, width, outer_height);
+			rcol_plain(color_frame);
+			rt_3x3(style->bg3x3, 0, 0, width, outer_height);
 		}
 
 		const int y0 = inner_h + style->y_padding;

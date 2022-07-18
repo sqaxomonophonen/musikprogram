@@ -33,7 +33,8 @@ enum r_tile_group {
 
 #define TILES \
 	DEF_TILE0(one,   nil,   EXT, EXT, ((void)p,1.0)) \
-	DEF_TILE3x3(box, boxes, 1.0, 1.0, (Circle(1.0) && !Circle(0.9)) || (Circle(0.7) && !Circle(0.4)))
+	DEF_TILE3x3(fancy_box, boxes, 1.0, 1.0, (Circle(1.0) && !Circle(0.9)) || (Circle(0.7) && !Circle(0.4))) \
+	DEF_TILE3x3(box, boxes, 1.0, 1.0, Circle(1.0))
 
 enum r_tile {
 	RT_NONE = -1,

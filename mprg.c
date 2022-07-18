@@ -166,19 +166,23 @@ static void asset_pane_present(struct window* window, int right, float x)
 	struct asset_pane* pane = &window->asset_panes[right ? 1 : 0];
 
 	const int pad0 = 16;
-	const int pad1 = 10;
 
 	int w,h;
 	ui_dim(&w,&h);
+
+	ui_enter(pad0, pad0, w-pad0*2, h-pad0*2, 0);
+	ui_dim(&w,&h);
+
 	r_begin(R_MODE_TILE);
 	const float s = 0.03f;
 	//rcol_plain(pma_alpha(s,s,s*1.5f,lerp(x, 0, 0.9)));
 	rcol_plain(pma_alpha(s,s,s, 0.9));
-	rt_quad(pad0,pad0,w-pad0*2,h-pad0*2);
-
-	rcol_plain(pma_alpha(0,0,0.4,1));
-	rt_quad(pad0+pad1,pad0+pad1,w-(pad0+pad1)*2,(pad0+pad1)*2);
+	rt_quad(0,0,w,h);
 	r_end();
+
+	const int pad1 = 8;
+	ui_enter(pad1, pad1, w-pad1*2, h-pad1*2, 0);
+	ui_dim(&w,&h);
 
 	int sig = ui_text_input_handle(&pane->text_input, &style_asset_pane_text_input, 0, w);
 	if (sig) {
@@ -187,6 +191,9 @@ static void asset_pane_present(struct window* window, int right, float x)
 			window->overlay_assets = 0;
 		}
 	}
+
+	ui_leave();
+	ui_leave();
 }
 
 static int overlay_wants_focus(struct window* window)
@@ -353,7 +360,7 @@ static void init_styles()
 		st->font_px = 40;
 		st->x_padding = 3;
 		st->y_padding = 3;
-		st->border3x3 = T3x3(box);
+		st->bg3x3 = T3x3(box);
 	}
 }
 
