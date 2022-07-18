@@ -2,6 +2,7 @@
 
 #include "ui.h"
 #include "common.h"
+#include "r_tile.h"
 
 #define POSTPROC_ENUMS \
 	ENUM(NONE) \
@@ -36,10 +37,6 @@ typedef enum {
 // TODO
 //FIELD( last_folder,             String,               NewString("~")              )
 
-// XXX how to integrate TILE_GROUPS from r_tile.h? each tile group needs a size
-// preference, similar to font size
-// NOTE some preferences might be too "complex" and handled separately... such
-// as audio interface setup? maybe?
 #define PREFERENCE_FIELDS \
 	FIELD( font_mono_size,          int,      24          ) \
 	FIELD( font_variable_size,      int,      24          ) \
@@ -71,6 +68,9 @@ struct preferences {
 	#define FIELD(NAME,TYPE,DEFAULT) TYPE NAME;
 	PREFERENCE_FIELDS
 	#undef FIELD
+	#define TG(GROUP,DEFAULT_SZ,DESC) int tgsz_ ## GROUP;
+	TILE_GROUPS
+	#undef TG
 };
 
 enum action {
@@ -99,6 +99,7 @@ extern struct colorscheme colorscheme;
 
 void prefs_init();
 void prefs_save();
+int prefs_get_tile_group_sz(enum r_tile_group tg);
 
 #define PREFS_H
 #endif

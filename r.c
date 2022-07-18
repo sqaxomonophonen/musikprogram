@@ -6,12 +6,12 @@
 #include "stb_rect_pack.h"
 #include "stb_truetype.h"
 #include "sokol_time.h"
-
+#include "stb_ds.h"
+#include "gpudl.h"
 #include "embedded_resources.h"
 #include "r.h"
-#include "gpudl.h"
 #include "clip.h"
-#include "stb_ds.h"
+#include "prefs.h"
 
 // couldn't convince myself that dynamic atlas resizing is worth the trouble :)
 // having to flush early when the atlas overflows is bad enough, but dynamic
@@ -1302,7 +1302,16 @@ void rt_xpos_codepoint_array(int* xpos, int* codepoints, int n)
 
 static int get_tile_px(enum r_tile t)
 {
-	return 8; // TODO tile group size configuration, or at least return default
+	int group = -1;
+	switch (t) {
+	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) case RT_ ## N: group = RTG_ ## G; break;
+	TILES
+	#undef DEF_TILE
+	default: assert(!"invalid tile");
+	}
+	assert(group >= 0);
+
+	return prefs_get_tile_group_sz(group);
 }
 
 int rt_get_3x3_inner_dim(enum r_tile t00, int* width, int* height)

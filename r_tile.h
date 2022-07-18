@@ -3,8 +3,8 @@
 #include <stdint.h>
 
 #define TILE_GROUPS \
-	TG(boxes,  8.0,  "Rounded Boxes") \
-	TG(boxes2, 10.0, "Other rounded Boxes")
+	TG(boxes,  8,  "Rounded Boxes") \
+	TG(boxes2, 10, "Other rounded Boxes")
 
 enum r_tile_group {
 	RTG_nil = 0,

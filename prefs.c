@@ -450,6 +450,9 @@ static void preferences_set_defaults()
 	#define FIELD(NAME,TYPE,DEFAULT) preferences.NAME = DEFAULT;
 	PREFERENCE_FIELDS
 	#undef FIELD
+	#define TG(GROUP,DEFAULT_SZ,DESC) preferences.tgsz_ ## GROUP = DEFAULT_SZ;
+	TILE_GROUPS
+	#undef TG
 }
 
 static void report(int h, struct loader* l)
@@ -489,6 +492,9 @@ static void preferences_load()
 		#define FIELD(NAME,TYPE,DEFAULT) if (loader_key(&l, #NAME)) h = load_##TYPE(&l, &preferences.NAME);
 		PREFERENCE_FIELDS
 		#undef FIELD
+		#define TG(GROUP,DEFAULT_SZ,DESC) if (loader_key(&l, "tgsz_" #GROUP)) h = load_int(&l, &preferences.tgsz_ ## GROUP);
+		TILE_GROUPS
+		#undef TG
 		report(h, &l);
 	}
 }
@@ -542,4 +548,14 @@ void prefs_save()
 	// TODO
 	//  - should I write config files from scratch, or instead attempt to
 	//    patch in changes? (keeping custom stuff as-is)
+}
+
+int prefs_get_tile_group_sz(enum r_tile_group tg)
+{
+	switch (tg) {
+	#define TG(GROUP,DEFAULT_SZ,DESC) case RTG_ ## GROUP: return preferences.tgsz_ ## GROUP;
+	TILE_GROUPS
+	#undef TG
+	default: assert(!"invalid tile group");
+	}
 }
