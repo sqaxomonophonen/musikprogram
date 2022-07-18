@@ -16,6 +16,6 @@ if [ "$ARG" = "2" ] ; then
 	git ls-files '*.h' | sloc ".h"
 else
 	# exclude "external deps"
-	git ls-files '*.h' | grep -vF "stb_" | grep -vF "webgpu.h" | grep -vF "gpudl.h" | grep -vF "sokol_" | sloc ".h"
+	git ls-files '*.h' | grep -vF "stb_" | grep -vF "webgpu.h" | grep -vF "sokol_" | sloc ".h"
 fi
 git ls-files '*.wgsl' | sloc ".wgsl"
