@@ -460,7 +460,6 @@ int main(int argc, char** argv)
 
 		if ((iteration & 0) == 0) {
 			r_begin_ptn_frame(ptn0);
-			ui_enter(0, 0, ptn0_sz, ptn0_sz, CLIP);
 			r_begin(R_MODE_TILE);
 			rcol_plain(v4(0.0, 0.0, 0.0, 1.0));
 			rt_clear();
@@ -502,7 +501,6 @@ int main(int argc, char** argv)
 			//rcol_plain(v4(1.0, 0.0, 1.0, 1.0));
 			//rt_quad(0, 0, iteration % 128, (iteration*2) % 128);
 			r_end();
-			ui_leave();
 			r_end_ptn_frame();
 		}
 

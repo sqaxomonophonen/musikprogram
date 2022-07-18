@@ -20,6 +20,8 @@ struct uistate {
 	int group_serial;
 	int* seen_groups;
 
+	int set_cursor;
+
 	// derived
 	union v2 current_offset;
 	struct rect current_region;
@@ -52,6 +54,7 @@ void ui_begin(struct ui_window* uw)
 	struct uistate* u = &uistate;
 	assert((u->uw == NULL) && "already inside ui_begin()");
 	u->uw = uw;
+	u->set_cursor = GPUDL_CURSOR_DEFAULT;
 	uw->keypress_cursor = 0;
 	arrsetlen(u->seen_groups, 0);
 }
@@ -91,6 +94,8 @@ void ui_end()
 	} else {
 		uw->next_focus_group = 0;
 	}
+
+	gpudl_set_cursor(u->set_cursor);
 
 	uw->last_mpos = uw->mpos;
 	u->uw = NULL;
@@ -156,7 +161,7 @@ void ui_pan(int dx, int dy)
 	r_offset(off.x+dx, off.y+dy);
 }
 
-static void region_refresh()
+static void region_refresh_please()
 {
 	struct uistate* u = &uistate;
 	const int n_regions = u->n_regions;
@@ -202,6 +207,7 @@ static void region_refresh()
 void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 {
 	struct uistate* u = &uistate;
+	assert(u->uw != NULL);
 
 	if (group && *group == 0) *group = ++u->group_serial;
 
@@ -215,13 +221,20 @@ void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 
 	u->n_regions++;
 
-	region_refresh();
+	region_refresh_please();
+
+	struct rect* cr = get_region();
+	const int mpos_inside_region = rect_contains(cr, &u->uw->mpos);
+	const int last_mpos_inside_region = rect_contains(cr, &u->uw->last_mpos);
+
+	if (mpos_inside_region && (u->current_flags & CURSOR_FLAGS_MASK)) {
+		u->set_cursor = CURSOR_UNMASK_FLAGS(u->current_flags);
+	}
 
 	if (group && !(get_flags() & NO_INPUT)) {
 		if (u->uw->focused_group == 0) u->uw->focused_group = *group;
 		arrput(u->seen_groups, *group);
-		struct rect* cr = get_region();
-		if (rect_contains(cr, &u->uw->mpos) && !rect_contains(cr, &u->uw->last_mpos)) {
+		if (mpos_inside_region && !last_mpos_inside_region) {
 			u->uw->focused_group = *group;
 		}
 	}
@@ -237,7 +250,7 @@ void ui_leave()
 	struct uistate* u = &uistate;
 	assert((u->n_regions > 0) && "no region");
 	u->n_regions--;
-	region_refresh();
+	region_refresh_please();
 }
 
 static int has_keyboard_focus()
@@ -455,6 +468,16 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 	int emit_signal = 0;
 	int n_handled = 0;
 
+	int inner_w = 0;
+	int inner_h = 0;
+	const int got_border = rt_get_3x3_inner_dim(style->border3x3, &inner_w, &inner_h);
+
+	int ascent, descent;
+	r_get_font_v_metrics(style->font, style->font_px, &ascent, &descent);
+	const int outer_height = ascent + 2*style->y_padding + 2*inner_h;
+
+	ui_enter(0, 0, width, outer_height, CLIP + CURSOR_FLAGS(GPUDL_CURSOR_TEXT));
+
 	const int focus = has_keyboard_focus();
 
 	if (focus) { // handle keyboard input
@@ -497,14 +520,6 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 			if (signal < emit_signal) emit_signal = signal;
 		}
 	}
-
-	int inner_w = 0;
-	int inner_h = 0;
-	const int got_border = rt_get_3x3_inner_dim(style->border3x3, &inner_w, &inner_h);
-
-	int ascent, descent;
-	r_get_font_v_metrics(style->font, style->font_px, &ascent, &descent);
-	const int outer_height = ascent + 2*style->y_padding + 2*inner_h;
 
 	{ // render
 		r_begin(R_MODE_TILE);
@@ -555,6 +570,8 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 	// TODO handle mouse input here; ti->xpos was repopulated above, which
 	// is required for press (set cursor) and drag (set selection) stuff
+
+	ui_leave();
 
 	return emit_signal != 0 ? emit_signal : n_handled;
 }

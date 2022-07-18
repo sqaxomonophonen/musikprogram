@@ -27,8 +27,16 @@ enum ui_modifier_mask {
 	#undef MOD
 };
 
-#define NO_INPUT (1<<0) // suppress input in region
-#define CLIP     (1<<1) // clip graphics to region
+enum {
+	FI_NO_INPUT, FI_CLIP,
+	N_REGION_FLAG_BITS // << must be last
+};
+#define NO_INPUT (1<<FI_NO_INPUT)
+#define CLIP     (1<<FI_CLIP)
+
+#define CURSOR_FLAGS(gpudl_cursor)  ((gpudl_cursor) << N_REGION_FLAG_BITS)
+#define CURSOR_FLAGS_MASK           (((1 << GPUDL_MAX_CURSORS_LOG2)-1) << N_REGION_FLAG_BITS)
+#define CURSOR_UNMASK_FLAGS(x)      (((x) >> N_REGION_FLAG_BITS) & ((1 << GPUDL_MAX_CURSORS_LOG2)-1))
 
 struct ui_mbtn {
 	int clicked;

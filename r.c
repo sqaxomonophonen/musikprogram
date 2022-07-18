@@ -844,6 +844,8 @@ static void begin_frame(int width, int height, WGPUTextureView target, float dra
 	wgpuQueueWriteBuffer(r->queue, r->draw_unibuf, 0, &u, sizeof u);
 
 	r->begun_frame = 1;
+
+	r_clip(0, 0, width, height);
 }
 
 static void end_frame(void)

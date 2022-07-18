@@ -4,12 +4,12 @@
 #include <math.h>
 #include <stdint.h>
 
-#define PI (3.141592653589793)
-#define PI2 (PI*2.0)
-
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 #define MEMBER_SIZE(t,m) sizeof(((t *)0)->m)
 #define MEMBER_OFFSET(t,m) (void*)((size_t)&(((t *)0)->m))
+
+#define PI (3.141592653589793)
+#define PI2 (PI*2.0)
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
