@@ -29,7 +29,7 @@ struct token {
 struct loader {
 	int more;
 
-	struct token* tokens;
+	struct token* tokens_arr;
 
 	int f;
 	const void* ptr;
@@ -187,10 +187,10 @@ static void loader_next(struct loader* l)
 	const char* pend = l->ptr + l->sz;
 	const char* p0 = l->p0;
 
-	arrsetlen(l->tokens, 0);
+	arrsetlen(l->tokens_arr, 0);
 
 	#define SKIP_P0_TO_NEWLINE while (p0 < pend && !is_newline(*p0)) p0++;
-	#define YIELD_IF_TOKENS if (arrlen(l->tokens) > 0) break;
+	#define YIELD_IF_TOKENS if (arrlen(l->tokens_arr) > 0) break;
 	#define SKIP_P0_TO_NEWLINE_AND_YIELD_IF_TOKENS \
 		SKIP_P0_TO_NEWLINE \
 		YIELD_IF_TOKENS
@@ -206,7 +206,7 @@ static void loader_next(struct loader* l)
 		if (is_symbol_char0(*p0)) {
 			const char* p1 = p0;
 			while (p1 < pend && is_symbol_char(*p1)) p1++;
-			arrput(l->tokens, ((struct token) {
+			arrput(l->tokens_arr, ((struct token) {
 				.t      = TOKEN_SYMBOL,
 				.offset = offset,
 				.len    = p1 - p0,
@@ -215,7 +215,7 @@ static void loader_next(struct loader* l)
 		} else if (is_number_char0(*p0)) {
 			const char* p1 = pend;
 			if (parse_number(p0, &p1, NULL)) {
-				arrput(l->tokens, ((struct token) {
+				arrput(l->tokens_arr, ((struct token) {
 					.t      = TOKEN_NUMBER,
 					.offset = offset,
 					.len    = p1 - p0,
@@ -227,7 +227,7 @@ static void loader_next(struct loader* l)
 		} else if (*p0 == '"') {
 			const char* p1 = pend;
 			if (parse_string(p0, &p1, NULL, 0) >= 0) {
-				arrput(l->tokens, ((struct token) {
+				arrput(l->tokens_arr, ((struct token) {
 					.t      = TOKEN_STRING,
 					.offset = offset,
 					.len    = p1 - p0,
@@ -251,7 +251,7 @@ static void loader_next(struct loader* l)
 	#undef YIELD_IF_TOKENS
 	#undef SKIP_P0_TO_NEWLINE
 
-	l->more = arrlen(l->tokens);
+	l->more = arrlen(l->tokens_arr);
 	l->p0 = p0;
 
 	if (!l->more) {
@@ -264,8 +264,8 @@ static void loader_next(struct loader* l)
 
 static int loader_key(struct loader* l, const char* k)
 {
-	if (arrlen(l->tokens) < 1 || l->tokens[0].t != TOKEN_SYMBOL) return 0;
-	return memcmp(k, l->ptr + l->tokens[0].offset, l->tokens[0].len) == 0;
+	if (arrlen(l->tokens_arr) < 1 || l->tokens_arr[0].t != TOKEN_SYMBOL) return 0;
+	return memcmp(k, l->ptr + l->tokens_arr[0].offset, l->tokens_arr[0].len) == 0;
 }
 
 static void postinit_loader(struct loader* l)
@@ -320,8 +320,8 @@ static int token_get_string(struct loader* l, struct token* tok, char* buf, size
 
 static int load_double(struct loader* l, double* v)
 {
-	if (arrlen(l->tokens) != 2) return BAD_VALUE;
-	return token_get_double(l, &l->tokens[1], v);
+	if (arrlen(l->tokens_arr) != 2) return BAD_VALUE;
+	return token_get_double(l, &l->tokens_arr[1], v);
 }
 
 static int load_int(struct loader* l, int* v)
@@ -342,10 +342,10 @@ static int load_float(struct loader* l, float* v)
 
 static int load_v4(struct loader* l, union v4* v)
 {
-	if (arrlen(l->tokens) != 5) return BAD_VALUE;
+	if (arrlen(l->tokens_arr) != 5) return BAD_VALUE;
 	for (int i = 0; i < 4; i++) {
 		double d;
-		int r = token_get_double(l, &l->tokens[1+i], &d);
+		int r = token_get_double(l, &l->tokens_arr[1+i], &d);
 		if (r == BAD_VALUE) return r;
 		v->s[i] = d;
 	}
@@ -368,14 +368,14 @@ static int load_shortcutn(struct loader* l, int n_shortcuts, struct ui_keypress 
 {
 	memset(shortcuts, 0, n_shortcuts * sizeof(*shortcuts));
 
-	int n_tokens = arrlen(l->tokens);
+	int n_tokens = arrlen(l->tokens_arr);
 	if (n_tokens < 2) return OK_VALUE;
 
 	int sci = 0;
 	struct ui_keypress *sc = shortcuts;
 
 	for (int i = 1; i < n_tokens; i++) {
-		struct token* tok = &l->tokens[i];
+		struct token* tok = &l->tokens_arr[i];
 		char buf[1024];
 		int r = token_get_string(l, tok, buf, sizeof buf);
 		if (r == BAD_VALUE) return BAD_VALUE;
@@ -416,9 +416,9 @@ static int load_shortcut2(struct loader* l, struct ui_keypress *shortcut)
 
 static int load_postproc_enum(struct loader* l, postproc_enum* v)
 {
-	if (arrlen(l->tokens) != 2) return BAD_VALUE;
+	if (arrlen(l->tokens_arr) != 2) return BAD_VALUE;
 	char buf[1024];
-	int r = token_get_string(l, &l->tokens[1], buf, sizeof buf);
+	int r = token_get_string(l, &l->tokens_arr[1], buf, sizeof buf);
 	if (r == BAD_VALUE) return r;
 	#define ENUM(x) if (strcmp(buf, #x) == 0) { *v = POSTPROC_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
 	POSTPROC_ENUMS
@@ -428,9 +428,9 @@ static int load_postproc_enum(struct loader* l, postproc_enum* v)
 
 static int load_toplvl_layout_enum(struct loader* l, toplvl_layout_enum* v)
 {
-	if (arrlen(l->tokens) != 2) return BAD_VALUE;
+	if (arrlen(l->tokens_arr) != 2) return BAD_VALUE;
 	char buf[1024];
-	int r = token_get_string(l, &l->tokens[1], buf, sizeof buf);
+	int r = token_get_string(l, &l->tokens_arr[1], buf, sizeof buf);
 	if (r == BAD_VALUE) return r;
 	#define ENUM(x) if (strcmp(buf, #x) == 0) { *v = TOPLVL_LAYOUT_ ## x; /* printf("loaded %s/%d\n", #x, *v); */ return OK_VALUE; }
 	TOPLVL_LAYOUT_ENUMS
@@ -460,8 +460,8 @@ static void report(int h, struct loader* l)
 	if (h == OK_VALUE) return;
 	char buf[1024];
 	snprintf(buf, sizeof buf, "???");
-	if (arrlen(l->tokens) >= 1 && l->tokens[0].t == TOKEN_SYMBOL) {
-		struct token* tok = &l->tokens[0];
+	if (arrlen(l->tokens_arr) >= 1 && l->tokens_arr[0].t == TOKEN_SYMBOL) {
+		struct token* tok = &l->tokens_arr[0];
 		if (tok->len < sizeof(buf)) {
 			memcpy(buf, l->ptr + tok->offset, tok->len);
 			buf[tok->len] = 0;

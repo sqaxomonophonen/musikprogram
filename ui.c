@@ -18,7 +18,7 @@ struct uistate {
 	struct ui_window* uw;
 
 	int group_serial;
-	int* seen_groups;
+	int* seen_groups_arr;
 
 	int set_cursor;
 
@@ -56,7 +56,7 @@ void ui_begin(struct ui_window* uw)
 	u->uw = uw;
 	u->set_cursor = GPUDL_CURSOR_DEFAULT;
 	uw->keypress_cursor = 0;
-	arrsetlen(u->seen_groups, 0);
+	arrsetlen(u->seen_groups_arr, 0);
 }
 
 static struct ui_window* get_uw()
@@ -78,8 +78,8 @@ void ui_end()
 	int lowest_group = -1;
 	int next_group = -1;
 	int seen = 0;
-	for (int i = 0; i < arrlen(u->seen_groups); i++) {
-		const int g = u->seen_groups[i];
+	for (int i = 0; i < arrlen(u->seen_groups_arr); i++) {
+		const int g = u->seen_groups_arr[i];
 		if (g == uw->focused_group) seen = 1;
 		if (lowest_group == -1 || g < lowest_group) lowest_group = g;
 		if (g > uw->focused_group) {
@@ -233,7 +233,7 @@ void ui_enter_group(int x, int y, int w, int h, int flags, int* group)
 
 	if (group && !(get_flags() & NO_INPUT)) {
 		if (u->uw->focused_group == 0) u->uw->focused_group = *group;
-		arrput(u->seen_groups, *group);
+		arrput(u->seen_groups_arr, *group);
 		if (mpos_inside_region && !last_mpos_inside_region) {
 			u->uw->focused_group = *group;
 		}
@@ -400,7 +400,7 @@ static int ti_get_selection(struct ui_text_input* ti, int* i0, int* i1)
 
 static void ti_trim(struct ui_text_input* ti)
 {
-	const int n0 = arrlen(ti->codepoints);
+	const int n0 = arrlen(ti->codepoints_arr);
 
 	if (ti->cursor < 0) ti->cursor = 0;
 	if (ti->cursor > n0) ti->cursor = n0;
@@ -438,7 +438,7 @@ static int ti_delete_selection(struct ui_text_input* ti)
 	int s0;
 	int nsel = ti_get_selection(ti, &s0, NULL);
 	if (nsel) {
-		arrdeln(ti->codepoints, s0, nsel);
+		arrdeln(ti->codepoints_arr, s0, nsel);
 		ti->cursor = ti->select1 = ti->select0 = s0;
 	}
 	return nsel;
@@ -446,7 +446,7 @@ static int ti_delete_selection(struct ui_text_input* ti)
 
 static void ti_delete(struct ui_text_input* ti, int is_backspace)
 {
-	const int nc = arrlen(ti->codepoints);
+	const int nc = arrlen(ti->codepoints_arr);
 
 	if (ti_delete_selection(ti)) {
 		// [backspace] and [delete] work the same
@@ -459,7 +459,7 @@ static void ti_delete(struct ui_text_input* ti, int is_backspace)
 
 	if (is_backspace) ti->cursor--;
 	assert(0 <= ti->cursor && ti->cursor < nc);
-	arrdel(ti->codepoints, ti->cursor);
+	arrdel(ti->codepoints_arr, ti->cursor);
 	ti_trim(ti);
 }
 
@@ -498,7 +498,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 			} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_SHIFT_MASK, .keysym = GK_RIGHT })) {
 				ti_move(ti, 1, 1);
 			} else if (shortcut_match(*kp, (struct ui_keypress) { .modmask = UI_CTRL_MASK, .keysym = 'a' })) {
-				const int n = arrlen(ti->codepoints);
+				const int n = arrlen(ti->codepoints_arr);
 				ti->cursor = n;
 				ti->select0 = 0;
 				ti->select1 = n;
@@ -508,7 +508,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 				signal = UI_SIGNAL_ESCAPE;
 			} else if (kp->codepoint >= ' ') {
 				ti_delete_selection(ti);
-				arrins(ti->codepoints, ti->cursor, kp->codepoint);
+				arrins(ti->codepoints_arr, ti->cursor, kp->codepoint);
 				ti_move(ti, 1, 0);
 			} else {
 				kp->keep = 1;
@@ -544,9 +544,9 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 
 		rt_goto(inner_w + style->x_padding, y1);
 		rt_font(style->font, style->font_px);
-		const int n = arrlen(ti->codepoints);
+		const int n = arrlen(ti->codepoints_arr);
 		arrsetlen(ti->xpos, n+1);
-		rt_xpos_codepoint_array(ti->xpos, ti->codepoints, n);
+		rt_xpos_codepoint_array(ti->xpos, ti->codepoints_arr, n);
 
 		int s0, s1;
 		if (ti_get_selection(ti, &s0, &s1)) {
@@ -566,7 +566,7 @@ int ui_text_input_handle(struct ui_text_input* ti, struct ui_style_text_input* s
 		}
 
 		rcol_plain(color_text);
-		rt_print_codepoint_array(ti->codepoints, n);
+		rt_print_codepoint_array(ti->codepoints_arr, n);
 
 		r_end();
 	}
@@ -585,12 +585,12 @@ void ui_text_input_debug(struct ui_text_input* ti)
 	const char* CUR = "\033[42m";
 	const char* SEL = "\033[44m";
 	printf("[");
-	const int n = arrlen(ti->codepoints);
+	const int n = arrlen(ti->codepoints_arr);
 	const char* prev_style = NULL;
 	int s0, s1;
 	int nsel = ti_get_selection(ti, &s0, &s1);
 	for (int i = 0; i <= n; i++) {
-		int cp = i < n ? ti->codepoints[i] : ']';
+		int cp = i < n ? ti->codepoints_arr[i] : ']';
 		const char* style;
 		if (i == ti->cursor) {
 			style = CUR;

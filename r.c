@@ -241,7 +241,7 @@ struct r {
 
 	int              is_pattern_frame;
 	WGPUBindGroup    current_pattern_bind_group;
-	struct pattern*  patterns;
+	struct pattern*  patterns_arr;
 } rstate;
 
 static void font_init(struct font* font, void* data, int index)
@@ -882,8 +882,8 @@ void r_end_frame(void)
 static struct pattern* get_pattern(int pattern)
 {
 	struct r* r = &rstate;
-	assert(0 <= pattern && pattern < arrlen(r->patterns));
-	struct pattern* p = &r->patterns[pattern];
+	assert(0 <= pattern && pattern < arrlen(r->patterns_arr));
+	struct pattern* p = &r->patterns_arr[pattern];
 	assert(!p->is_free);
 	return p;
 }
@@ -985,16 +985,16 @@ static void* r_request(size_t vtxbuf_requested, int idxbuf_requested)
 int rptn_new(int width, int height)
 {
 	struct r* r = &rstate;
-	const int n_patterns = arrlen(r->patterns);
+	const int n_patterns = arrlen(r->patterns_arr);
 	struct pattern* p = NULL;
 	for (int i = 0; i < n_patterns; i++) {
-		struct pattern* ptmp  = &r->patterns[i];
+		struct pattern* ptmp  = &r->patterns_arr[i];
 		if (ptmp->is_free) {
 			p = ptmp;
 			break;
 		}
 	}
-	if (p == NULL) p = arraddnptr(r->patterns, 1);
+	if (p == NULL) p = arraddnptr(r->patterns_arr, 1);
 	assert(p != NULL);
 	memset(p, 0, sizeof *p);
 
@@ -1043,7 +1043,7 @@ int rptn_new(int width, int height)
 	});
 	assert(p->bind_group);
 
-	return p - r->patterns;
+	return p - r->patterns_arr;
 }
 
 void rptn_free(int pattern)
