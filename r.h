@@ -81,7 +81,9 @@ enum r_glyph0 {
 };
 
 struct r_glyph {
-	uint16_t glyph0; // one of `enum r_glyph0`
+	uint16_t glyph0:12; // one of `enum r_glyph0`
+	uint16_t cx:2;
+	uint16_t cy:2;
 	uint16_t px;
 	uint32_t a0; // codepoint when .glyph0 = R_FONT_*
 	uint32_t a1;

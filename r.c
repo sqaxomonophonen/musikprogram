@@ -463,8 +463,10 @@ static void get_glyph_dim_ext(struct r_glyph glyph, int* wp, int* hp, int* ext_x
 			break;
 		case RT3x3_RBOX_INNER:
 		case RT3x3_RBOX_BORDER: {
-			assert(!"TODO"); // TODO
-			} break;
+			w = h = glyph.px;
+			ext_x = (glyph.cx == 1);
+			ext_y = (glyph.cy == 1);
+		} break;
 		default:
 			assert(!"unhandled r_glyph0 id");
 		}
@@ -1310,20 +1312,18 @@ void rt_xpos_codepoint_array(int* xpos, int* codepoints, int n)
 }
 
 
-static inline struct r_glyph glyphmod_3x3(struct r_glyph g, int x, int y)
+static inline struct r_glyph glyphmod_3x3(struct r_glyph g, int cx, int cy)
 {
-	assert(0 <= x && x <= 2);
-	assert(0 <= y && y <= 2);
-	const int index = x + 3*y;
-	assert(0 <= index && index < 9);
-	assert(!"TODO"); // TODO XXX
+	assert(0 <= cx && cx <= 2);
+	assert(0 <= cy && cy <= 2);
+	g.cx = cx;
+	g.cy = cy;
 	return g;
 }
 
 void rt_get_3x3_inner_dim(struct r_glyph g, int* width, int* height)
 {
 	int set_width = 0, set_height = 0;
-	int sum_height = 0;
 	for (int y = 0; y < 3; y++) {
 		int sum_width = 0;
 		int add_height = -1;
@@ -1341,7 +1341,7 @@ void rt_get_3x3_inner_dim(struct r_glyph g, int* width, int* height)
 				}
 			}
 		}
-		if (add_height > 0) sum_height += add_height;
+		if (add_height > 0) set_height += add_height;
 		if (y == 0) {
 			set_width = sum_width;
 		} else {
