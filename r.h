@@ -85,8 +85,16 @@ struct r_glyph {
 	uint16_t cx:2;
 	uint16_t cy:2;
 	uint16_t px;
-	uint32_t a0; // codepoint when .glyph0 = R_FONT_*
-	uint32_t a1;
+	union {
+		uint32_t u0; // codepoint when .glyph0 = R_FONT_*
+		float f0;
+	};
+	#if 0
+	union {
+		uint32_t u1;
+		float f1;
+	};
+	#endif
 }; // 12 bytes
 
 
@@ -151,7 +159,7 @@ static inline struct r_glyph rg_rbox_border(int px, float width)
 	return (struct r_glyph) {
 		.glyph0 = RT3x3_RBOX_BORDER,
 		.px = px,
-		// XXX TODO encode width...
+		.f0 = width,
 	};
 }
 

@@ -21,8 +21,9 @@ ui.o: ui.c ui.h common.h embedded_resources.h
 r.o: r.c r.h
 prefs.o: prefs.c prefs.h embedded_resources.h
 fs.o: fs.c fs.h
+bsm.o: bsm.c bsm.h
 mprg.o: mprg.c stb_ds.h sokol_time.h common.h gpudl.h fps.h pwr.h stb_rect_pack.h stb_truetype.h prefs.h
-mprg: mprg.o prefs.o fs.o clip.o ui.o r.o stb_ds.o sokol_time.o gpudl.o embedded_resources.o stb_rect_pack.o stb_truetype.o
+mprg: mprg.o prefs.o fs.o bsm.o clip.o ui.o r.o stb_ds.o sokol_time.o gpudl.o embedded_resources.o stb_rect_pack.o stb_truetype.o
 
 clean:
 	rm -f mprg *.o embedded_resources.c build_embedded_resources_dot_c

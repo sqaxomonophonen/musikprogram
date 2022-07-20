@@ -12,6 +12,7 @@
 #include "r.h"
 #include "clip.h"
 #include "prefs.h"
+#include "bsm.h"
 
 // couldn't convince myself that dynamic atlas resizing is worth the trouble :)
 // having to flush early when the atlas overflows is bad enough, but dynamic
@@ -452,7 +453,7 @@ static void get_glyph_dim_ext(struct r_glyph glyph, int* wp, int* hp, int* ext_x
 		if (wp != NULL || hp != NULL) {
 			const float scale = stbtt_ScaleForPixelHeight(&font->info, glyph.px);
 			int x0=0,y0=0,x1=0,y1=0;
-			stbtt_GetCodepointBitmapBox(&font->info, glyph.a0, scale, scale, &x0, &y0, &x1, &y1);
+			stbtt_GetCodepointBitmapBox(&font->info, glyph.u0, scale, scale, &x0, &y0, &x1, &y1);
 			w = x1-x0;
 			h = y1-y0;
 		}
@@ -508,20 +509,26 @@ static void glyph_raster(int index)
 	struct font* font = get_font_for_glyph0(glyph.glyph0);
 	if (font != NULL) {
 		const float scale = stbtt_ScaleForPixelHeight(&font->info, glyph.px);
-		stbtt_MakeCodepointBitmap(&font->info, p, w, h, ATLAS_WIDTH, scale, scale, glyph.a0);
+		stbtt_MakeCodepointBitmap(&font->info, p, w, h, ATLAS_WIDTH, scale, scale, glyph.u0);
 	} else {
+		bsm_begin(w,h);
+
 		switch (glyph.glyph0) {
 		case RT_ONE: {
-			const int n = w*h;
-			for (int i = 0; i < n; i++) *(p++) = 255;
+			bsm_one();
 		} break;
 		case RT3x3_RBOX_INNER:
+			bsm_one(); // XXX FIXME
+			break;
 		case RT3x3_RBOX_BORDER:
-			assert(!"TODO"); // TODO
+			bsm_one(); // XXX FIXME
 			break;
 		default:
 			assert(!"unhandled glyph0");
 		}
+
+		bsm_to8(p);
+		assert((bsm_n() == 0) && "stack not empty after rasterization");
 	}
 
 	const int ux0 = rect->x;
@@ -1199,7 +1206,7 @@ static inline struct r_glyph font_glyph(enum r_glyph0 font, int px, int codepoin
 	return (struct r_glyph) {
 		.glyph0 = font,
 		.px = px,
-		.a0 = codepoint,
+		.u0 = codepoint,
 	};
 }
 
