@@ -74,12 +74,12 @@ struct ui_text_input {
 };
 
 struct ui_style_text_input {
-	enum r_font font;
+	enum r_glyph0 font;
 	int font_px;
 	int x_padding;
 	int y_padding;
-	enum r_tile bg3x3;
-	enum r_tile border3x3;
+	struct r_glyph bg3x3;
+	struct r_glyph border3x3;
 	#if 0
 	int color_bg;
 	int color_border;

@@ -3,8 +3,6 @@
 #include "common.h"
 #include "gpudl.h"
 
-#include "r_tile.h"
-
 #define MAX_INTENSITY (16)
 
 union c16 {
@@ -71,12 +69,24 @@ struct postproc_window {
 	struct postproc_framebuf fb[MAX_POSTPROC_FRAMEBUFS];
 };
 
-enum r_font {
-	R_TILES,
+enum r_glyph0 {
 	R_FONT_MONOSPACE,
 	R_FONT_VARIABLE,
-	R_FONT_END
+	// ^^^ add more "font banks" here if required
+	RT_ONE,
+	RT3x3_RBOX_INNER,
+	RT3x3_RBOX_BORDER,
+	// XXX jeg kunne måske godt tænke mig at vide om det er en RT3x3...
+	R_GLYPH0_END
 };
+
+struct r_glyph {
+	uint16_t glyph0; // one of `enum r_glyph0`
+	uint16_t px;
+	uint32_t a0; // codepoint when .glyph0 = R_FONT_*
+	uint32_t a1;
+}; // 12 bytes
+
 
 void r_init(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, WGPUQueue queue);
 enum postproc_type r_get_postproc_type();
@@ -103,7 +113,7 @@ void rcol_ygrad(union v4 color0, union v4 color1);
 void r_offset(int x0, int y0);
 void r_clip(int x, int y, int w, int h);
 
-void r_get_font_v_metrics(enum r_font font, int px, int* ascent, int* descent);
+void r_get_font_v_metrics(enum r_glyph0 font, int px, int* ascent, int* descent);
 
 // R_MODE_VECTOR
 void rv_tri(union v2 p0, union v4 c0, union v2 p1, union v4 c1, union v2 p2, union v4 c2);
@@ -116,16 +126,32 @@ void rv_stroke(float width, int close);
 void rv_fill(void);
 
 // R_MODE_TILE
-void rt_font(enum r_font font, int px);
+void rt_font(enum r_glyph0 font, int px);
 void rt_goto(int cx, int cy);
 void rt_printf(const char* fmt, ...);
 void rt_print_codepoint_array(int* codepoints, int n);
 void rt_xpos_codepoint_array(int* xpos, int* codepoints, int n); // xpos must be n+1 long
-int rt_get_3x3_inner_dim(enum r_tile t00, int* width, int* height);
-void rt_3x3(enum r_tile t00, int x, int y, int w, int h);
+int rt_get_3x3_inner_dim(struct r_glyph g, int* width, int* height);
+void rt_3x3(struct r_glyph g, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
 void rt_clear(void);
 
+static inline struct r_glyph rg_rbox_inner(int px)
+{
+	return (struct r_glyph) {
+		.glyph0 = RT3x3_RBOX_INNER,
+		.px = px,
+	};
+}
+
+static inline struct r_glyph rg_rbox_border(int px, float width)
+{
+	return (struct r_glyph) {
+		.glyph0 = RT3x3_RBOX_BORDER,
+		.px = px,
+		// XXX TODO encode width...
+	};
+}
 
 #define R_H
 #endif

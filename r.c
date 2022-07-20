@@ -41,31 +41,6 @@
 
 
 
-#define GLYPHDEF_CODE_BITS (21)
-#define GLYPHDEF_SIZE_BITS (9)
-#define GLYPHDEF_BANK_BITS (2)
-
-union glyphdef {
-	uint32_t u32;
-	struct {
-		uint32_t code : GLYPHDEF_CODE_BITS; // highest unicode codepoint is U+10FFFF / 21 bits
-		uint32_t size : GLYPHDEF_SIZE_BITS;
-		uint32_t bank : GLYPHDEF_BANK_BITS;
-	};
-};
-
-static inline union glyphdef encode_glyphdef(int bank, int size, int code)
-{
-	assert(0 <= bank && bank < (1<<GLYPHDEF_BANK_BITS));
-	assert(0 <= size && size < (1<<GLYPHDEF_SIZE_BITS));
-	assert(0 <= code && code < (1<<GLYPHDEF_CODE_BITS));
-	return (union glyphdef) {
-		.bank = bank,
-		.size = size,
-		.code = code,
-	};
-}
-
 struct ppgauss_uni {
 	float width;
 	float height;
@@ -137,6 +112,11 @@ struct vector_vtx {
 	union c16 a_color;
 };
 
+struct glyphmap {
+	struct r_glyph glyph;
+	int rect_index;
+};
+
 struct tile_atlas {
 	uint8_t*            bitmap;
 	WGPUTexture         texture;
@@ -144,6 +124,7 @@ struct tile_atlas {
 
 	stbrp_context ctx;
 	stbrp_rect* rects_arr;
+	struct glyphmap* glyphmap_arr;
 	stbrp_node* nodes;
 
 	int update;
@@ -220,7 +201,7 @@ struct r {
 	union c16 color[2];
 	union v2  gradient_basis;
 
-	enum r_font font;
+	enum r_glyph0 font;
 	int font_px;
 	int font_cx0;
 	int font_cx;
@@ -231,8 +212,8 @@ struct r {
 
 	struct postproc_window* current_ppw;
 
-	union glyphdef glyphdef_requests[MAX_TILE_QUADS];
-	union glyphdef missing_glyphdefs[MAX_TILE_QUADS];
+	struct r_glyph glyph_requests[MAX_TILE_QUADS];
+	struct r_glyph missing_glyphs[MAX_TILE_QUADS];
 
 	int offset_x0, offset_y0;
 	int clip_x, clip_y, clip_w, clip_h;
@@ -404,130 +385,147 @@ static void postproc_end_frame(WGPUCommandEncoder encoder)
 	}
 }
 
-static int glyphdef_compare(union glyphdef a, union glyphdef b)
+static int glyph_compare(struct r_glyph a, struct r_glyph b)
 {
-	uint32_t a32 = a.u32;
-	uint32_t b32 = b.u32;
-	if (a32 < b32) return -1;
-	if (a32 > b32) return 1;
-	return 0;
+	return memcmp(&a, &b, sizeof a);
 }
 
-static int glyphdef_compar(const void* va, const void* vb)
+static int glyph_compar(const void* va, const void* vb)
 {
-	return glyphdef_compare(
-		*(const union glyphdef*)va,
-		*(const union glyphdef*)vb);
+	return glyph_compare(
+		*(const struct r_glyph*)va,
+		*(const struct r_glyph*)vb);
 }
 
-static inline int stbrect_compare(const stbrp_rect* a, const stbrp_rect* b)
+static int glyphmap_compare(struct glyphmap a, struct glyphmap b)
 {
-	union glyphdef ua = { .u32 = a->id };
-	union glyphdef ub = { .u32 = b->id };
-	return glyphdef_compare(ua, ub);
+	return glyph_compare(a.glyph, b.glyph);
 }
 
-static int stbrect_compar(const void* va, const void* vb)
+static int glyphmap_compar(const void* va, const void* vb)
 {
-	return stbrect_compare(va, vb);
+	const struct glyphmap* a = va;
+	const struct glyphmap* b = vb;
+	return glyphmap_compare(*a, *b);
 }
 
-static int get_glyph_index(union glyphdef glyphdef)
+static int get_glyph_rect_index(struct r_glyph g)
 {
 	struct r* r = &rstate;
 	struct tile_atlas* a = &r->tile_atlas;
-	stbrp_rect* rs = a->rects_arr;
+	struct glyphmap* gs = a->glyphmap_arr;
+
 	int left = 0;
-	int right = arrlen(rs) - 1;
+	int right = arrlen(gs) - 1;
 	while (left <= right) {
 		int mid = (left+right) >> 1;
-		int d = glyphdef_compare((union glyphdef) {.u32 = rs[mid].id}, glyphdef);
+		int d = glyph_compare(gs[mid].glyph, g);
 		if (d < 0) {
 			left = mid + 1;
 		} else if (d > 0) {
 			right = mid - 1;
 		} else {
-			return mid;
+			return gs[mid].rect_index;
 		}
 	}
 	return -1;
 }
 
-static float tile_dimensions_in_units[RT_END][2] = {
-	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) { (float)(W), (float)(H) },
-	TILES
-	#undef DEF_TILE
-};
-
-static inline int getpx(float units, int size)
-{
-	int v = ceilf(units * (float)size);
-	if (v <= 0) v = 1;
-	return v;
-}
-
-static struct font* get_font_for_bank(int bank)
+static struct font* get_font_for_glyph0(enum r_glyph0 g0)
 {
 	struct r* r = &rstate;
-	switch (bank) {
+	switch (g0) {
 	case R_FONT_MONOSPACE: return &r->font_monospace;
 	case R_FONT_VARIABLE:  return &r->font_variable;
-	default: assert(!"invalid font");
+	default: return NULL;
 	}
 }
 
-static void get_glyph_dim(union glyphdef glyphdef, int* w, int* h)
+static void get_glyph_dim_ext(struct r_glyph glyph, int* wp, int* hp, int* ext_xp, int* ext_yp)
 {
-	const int bank = glyphdef.bank;
-	const int size = glyphdef.size;
-	const int code = glyphdef.code;
-	if (bank == R_TILES) {
-		assert(0 <= code && code < RT_END);
-		float wu = tile_dimensions_in_units[code][0];
-		float hu = tile_dimensions_in_units[code][1];
-		if (w) *w = wu == EXT ? 1 : getpx(wu, size);
-		if (h) *h = hu == EXT ? 1 : getpx(hu, size);
+	enum r_glyph0 glyph0 = glyph.glyph0;
+
+	int w=0, h=0, ext_x=0, ext_y=0;
+
+	struct font* font = get_font_for_glyph0(glyph0);
+	if (font != NULL) {
+		if (wp != NULL || hp != NULL) {
+			const float scale = stbtt_ScaleForPixelHeight(&font->info, glyph.px);
+			int x0=0,y0=0,x1=0,y1=0;
+			stbtt_GetCodepointBitmapBox(&font->info, glyph.a0, scale, scale, &x0, &y0, &x1, &y1);
+			w = x1-x0;
+			h = y1-y0;
+		}
 	} else {
-		struct font* font = get_font_for_bank(bank);
-		const float scale = stbtt_ScaleForPixelHeight(&font->info, size);
-		int x0=0,y0=0,x1=0,y1=0;
-		stbtt_GetCodepointBitmapBox(&font->info, code, scale, scale, &x0, &y0, &x1, &y1);
-		int ww = x1-x0;
-		int hh = y1-y0;
-		if (w) *w = ww;
-		if (h) *h = hh;
-	}
-}
-
-static void glyph_raster(stbrp_rect* r)
-{
-	struct tile_atlas* a = &rstate.tile_atlas;
-	uint8_t* p = a->bitmap + r->x + r->y * ATLAS_WIDTH;
-	const int stride = ATLAS_WIDTH;
-	assert(stride > 0);
-	union glyphdef glyphdef = {.u32 = r->id};
-	int bank = glyphdef.bank;
-	int size = glyphdef.size;
-	int code = glyphdef.code;
-	//uint64_t t0 = stm_now();
-	int w,h;
-	get_glyph_dim(glyphdef, &w, &h);
-	if (w > 0 && h > 0) {
-		if (bank == R_TILES) {
-			r_tile_raster(code, w, h, p, stride);
-		} else {
-			struct font* font = get_font_for_bank(bank);
-			const float scale = stbtt_ScaleForPixelHeight(&font->info, size);
-			stbtt_MakeCodepointBitmap(&font->info, p, w, h, ATLAS_WIDTH, scale, scale, code);
+		switch (glyph0) {
+		case RT_ONE:
+			ext_x = ext_y = 1;
+			break;
+		case RT3x3_RBOX_INNER:
+		case RT3x3_RBOX_BORDER: {
+			assert(!"TODO"); // TODO
+			} break;
+		default:
+			assert(!"unhandled r_glyph0 id");
 		}
 	}
-	//uint64_t t1 = stm_now();
-	//printf("glyph_raster() for bank=%d, size=%d, code=%d took %f seconds (%dx%d)\n", bank, size, code, (double)stm_ns(stm_diff(t1,t0))*1e-9, w, h);
 
-	const int ux0 = r->x;
-	const int uy0 = r->y;
-	const int ux1 = r->x + r->w;
-	const int uy1 = r->y + r->h;
+	if (ext_x) w=1;
+	if (ext_y) h=1;
+
+	if (wp) *wp = w;
+	if (hp) *hp = h;
+	if (ext_xp) *ext_xp = ext_x;
+	if (ext_yp) *ext_yp = ext_y;
+}
+
+static void get_glyph_dim(struct r_glyph glyph, int* wp, int* hp)
+{
+	get_glyph_dim_ext(glyph, wp, hp, NULL, NULL);
+}
+
+static void get_glyph_ext(struct r_glyph glyph, int* ext_x, int* ext_y)
+{
+	get_glyph_dim_ext(glyph, NULL, NULL, ext_x, ext_y);
+}
+
+static void glyph_raster(int index)
+{
+	struct tile_atlas* a = &rstate.tile_atlas;
+	struct stbrp_rect* rect = &a->rects_arr[index];
+	struct glyphmap gm = a->glyphmap_arr[index];
+	assert(gm.rect_index == index); // condition doesn't hold for long (qsort() soon after)
+	struct r_glyph glyph = gm.glyph;
+	uint8_t* p = a->bitmap + rect->x + rect->y * ATLAS_WIDTH;
+	const int stride = ATLAS_WIDTH;
+	assert(stride > 0);
+
+	int w,h;
+	get_glyph_dim(glyph, &w, &h);
+
+	struct font* font = get_font_for_glyph0(glyph.glyph0);
+	if (font != NULL) {
+		const float scale = stbtt_ScaleForPixelHeight(&font->info, glyph.px);
+		stbtt_MakeCodepointBitmap(&font->info, p, w, h, ATLAS_WIDTH, scale, scale, glyph.a0);
+	} else {
+		switch (glyph.glyph0) {
+		case RT_ONE: {
+			const int n = w*h;
+			for (int i = 0; i < n; i++) *(p++) = 255;
+		} break;
+		case RT3x3_RBOX_INNER:
+		case RT3x3_RBOX_BORDER:
+			assert(!"TODO"); // TODO
+			break;
+		default:
+			assert(!"unhandled glyph0");
+		}
+	}
+
+	const int ux0 = rect->x;
+	const int uy0 = rect->y;
+	const int ux1 = rect->x + rect->w;
+	const int uy1 = rect->y + rect->h;
 	if (!a->update) {
 		a->update = 1;
 		a->update_x0 = ux0;
@@ -549,34 +547,28 @@ static int patch_tile_uvs(int n_quads)
 	struct tile_vtx* pv = (struct tile_vtx*)(rs->vtxbuf_data + rs->cursor0);
 	int n_missing = 0;
 	for (int i = 0; i < n_quads; i++, pv += 4) {
-		const union glyphdef glyphdef = rs->glyphdef_requests[i];
-		if (glyphdef.u32 == -1) continue;
-		const int glyph_index = get_glyph_index(glyphdef);
-		if (glyph_index < 0) {
-			rs->missing_glyphdefs[n_missing++] = glyphdef;
+		const struct r_glyph glyph = rs->glyph_requests[i];
+		if (glyph.glyph0 == R_GLYPH0_END) continue;           // see vvv
+		const int rect_index = get_glyph_rect_index(glyph);
+		if (rect_index < 0) {
+			rs->missing_glyphs[n_missing++] = glyph;
 		} else {
 			// prevent vertices from being patched twice (the
 			// operation is not idempotent). 1-frame weirdness may
 			// still occur if the atlas is reset midframe.
-			rs->glyphdef_requests[i].u32 = -1;
+			rs->glyph_requests[i].glyph0 = R_GLYPH0_END;  // see ^^^
 
-			stbrp_rect* r = &a->rects_arr[glyph_index];
+			stbrp_rect* r = &a->rects_arr[rect_index];
 			float u = r->x;
 			float v = r->y;
-			float w, h;
-			if (glyphdef.bank == R_TILES) {
-				const int code = glyphdef.code;
-				assert(0 <= code && code < RT_END);
-				const int ext_x = tile_dimensions_in_units[code][0] == EXT;
-				const int ext_y = tile_dimensions_in_units[code][1] == EXT;
-				if (ext_x) u += 0.5f;
-				if (ext_y) v += 0.5f;
-				w = ext_x ? 0.0f : r->w;
-				h = ext_y ? 0.0f : r->h;
-			} else {
-				w = r->w;
-				h = r->h;
-			}
+			float w = r->w;
+			float h = r->h;
+
+			int ext_x=0, ext_y=0;
+			get_glyph_ext(glyph, &ext_x, &ext_y);
+
+			if (ext_x) {  u += 0.5f;  w = 0;  }
+			if (ext_y) {  v += 0.5f;  h = 0;  }
 
 			for (int i = 0; i < 4; i++) {
 				pv[i].a_uv = v2(
@@ -687,20 +679,29 @@ static void r_flush(int flags)
 			const int n_missing = patch_tile_uvs(n_quads);
 
 			if (n_missing > 0) {
-				qsort(r->missing_glyphdefs, n_missing, sizeof r->missing_glyphdefs[0], glyphdef_compar);
+				qsort(r->missing_glyphs, n_missing, sizeof r->missing_glyphs[0], glyph_compar);
 
-				union glyphdef last_glyphdef = {.u32=-1};
+				struct r_glyph last_glyph = {0};
 				const int r0 = arrlen(a->rects_arr);
 				for (int i = 0; i < n_missing; i++) {
-					union glyphdef missing_glyphdef = r->missing_glyphdefs[i];
-					if (missing_glyphdef.u32 == last_glyphdef.u32) continue;
-
+					struct r_glyph missing_glyph = r->missing_glyphs[i];
+					if (glyph_compare(missing_glyph, last_glyph) == 0) continue;
 					int w=0, h=0;
-					get_glyph_dim(missing_glyphdef, &w, &h);
-					stbrp_rect r = { .id = missing_glyphdef.u32, .w = w, .h = h };
+					get_glyph_dim(missing_glyph, &w, &h);
+
+					struct glyphmap gm = {
+						.glyph = missing_glyph,
+						.rect_index = arrlen(a->rects_arr),
+					};
+					arrput(a->glyphmap_arr, gm);
+
+					stbrp_rect r = {
+						.w = w,
+						.h = h,
+					};
 					arrput(a->rects_arr, r);
 
-					last_glyphdef = missing_glyphdef;
+					last_glyph = missing_glyph;
 				}
 				const int r1 = arrlen(a->rects_arr);
 				assert(r1 > r0);
@@ -716,10 +717,8 @@ static void r_flush(int flags)
 					&a->rects_arr[r0],
 					r1-r0);
 				if (success) {
-					for (int i = r0; i < r1; i++) {
-						glyph_raster(&a->rects_arr[i]);
-					}
-					qsort(a->rects_arr, arrlen(a->rects_arr), sizeof *a->rects_arr, stbrect_compar);
+					for (int i = r0; i < r1; i++) glyph_raster(i);
+					qsort(a->glyphmap_arr, r1, sizeof a->glyphmap_arr[0], glyphmap_compar);
 					assert(patch_tile_uvs(n_quads) == 0);
 				} else if (!is_reentry) {
 					if (has_previous_tile_pass) {
@@ -728,6 +727,7 @@ static void r_flush(int flags)
 					}
 					flags |= FF__REENTRY;
 					arrsetlen(a->rects_arr, 0);
+					arrsetlen(a->glyphmap_arr, 0);
 					r_flush(flags);
 					return;
 				}
@@ -1101,10 +1101,8 @@ void rcol_ygrad(union v4 color0, union v4 color1)
 	rcol_lgrad(color0, color1, v2(0,1));
 }
 
-void rt_font(enum r_font font, int px)
+void rt_font(enum r_glyph0 font, int px)
 {
-	assert((R_TILES < font) && (font < R_FONT_END) && "invalid font");
-	assert(0 < px && px < 512);
 	struct r* r = &rstate;
 	r->font = font;
 	r->font_px = px;
@@ -1154,7 +1152,7 @@ static int triclip(struct clip* clip, union v2* p0, union v2* p1, union v2* p2)
 	return clip->result != CLIP_ALL;
 }
 
-static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
+static void rt_put(struct r_glyph glyph, int x, int y, int w, int h)
 {
 	struct r* r = &rstate;
 	assert(r->mode == R_MODE_TILE || r->mode == R_MODE_TILEPTN);
@@ -1174,13 +1172,14 @@ static void rt_put(int bank, int size, int code, int x, int y, int w, int h)
 
 	const int index = ((r->vtxbuf_cursor - r->cursor0) / (4*sizeof(*pv))) - 1;
 	assert(0 <= index && index < MAX_TILE_QUADS);
-	r->glyphdef_requests[index] = encode_glyphdef(bank, size, code);
+	r->glyph_requests[index] = glyph;
 }
 
 
-void r_get_font_v_metrics(enum r_font font, int px, int* ascent, int* descent)
+void r_get_font_v_metrics(enum r_glyph0 font, int px, int* ascent, int* descent)
 {
-	struct font* f = get_font_for_bank(font);
+	struct font* f = get_font_for_glyph0(font);
+	assert((f != NULL) && "not a font");
 	const float scale = stbtt_ScaleForPixelHeight(&f->info, px);
 	if (ascent) *ascent = (int)roundf(scale * (float)f->ascent);
 	if (descent) *descent = (int)roundf(scale * (float)f->descent);
@@ -1192,11 +1191,21 @@ enum {
 	PRINT_CODEPOINT_ARRAY_XPOS,
 };
 
+static inline struct r_glyph font_glyph(enum r_glyph0 font, int px, int codepoint)
+{
+	assert (get_font_for_glyph0(font) != NULL);
+	return (struct r_glyph) {
+		.glyph0 = font,
+		.px = px,
+		.a0 = codepoint,
+	};
+}
+
 static void rt_print_impl(int type, void* buffer, int n0, int* write)
 {
 	struct r* r = &rstate;
 	const int px = r->font_px;
-	struct font* font = get_font_for_bank(r->font);
+	struct font* font = get_font_for_glyph0(r->font);
 	const float scale = stbtt_ScaleForPixelHeight(&font->info, px);
 
 	//const int ascent_px = roundf((float)(font->ascent) * scale);
@@ -1257,7 +1266,7 @@ static void rt_print_impl(int type, void* buffer, int n0, int* write)
 			if (w > 0 && h > 0) {
 				const int lsb = (int)roundf((float)left_side_bearing * scale);
 				if (type != PRINT_CODEPOINT_ARRAY_XPOS) {
-					rt_put(rstate.font, rstate.font_px, codepoint, cursor_x + lsb, cursor_y + y0, w, h);
+					rt_put(font_glyph(rstate.font, rstate.font_px, codepoint), cursor_x + lsb, cursor_y + y0, w, h);
 				}
 				xpos += lsb;
 			}
@@ -1300,72 +1309,34 @@ void rt_xpos_codepoint_array(int* xpos, int* codepoints, int n)
 	rt_print_impl(PRINT_CODEPOINT_ARRAY_XPOS, codepoints, n, xpos);
 }
 
-static int get_tile_px(enum r_tile t)
+int rt_get_3x3_inner_dim(struct r_glyph g, int* width, int* height)
 {
-	int group = -1;
-	switch (t) {
-	#define DEF_TILE(N,G,W,H,X0,Y0,EXPR) case RT_ ## N: group = RTG_ ## G; break;
-	TILES
-	#undef DEF_TILE
-	default: assert(!"invalid tile");
-	}
-	assert(group >= 0);
-
-	return prefs_get_tile_group_sz(group);
+	assert(!"TODO"); // TODO
 }
 
-int rt_get_3x3_inner_dim(enum r_tile t00, int* width, int* height)
+static inline struct r_glyph glyphmod_3x3(struct r_glyph g, int x, int y)
 {
-	assert(RT_NONE <= t00 && t00 < RT_END);
-	if (t00 <= RT_NONE) return 0;
-
-	const float wu = tile_dimensions_in_units[t00][0];
-	const float hu = tile_dimensions_in_units[t00][1];
-
-	assert((wu != EXT) && (hu != EXT) && "3x3 x0y0 cannot have EXT width nor height");
-
-	assert(EXT == tile_dimensions_in_units[t00+1][0]);
-	assert(EXT == tile_dimensions_in_units[t00+4][0]);
-	assert(EXT == tile_dimensions_in_units[t00+7][0]);
-	assert(wu  == tile_dimensions_in_units[t00+2][0]);
-	assert(wu  == tile_dimensions_in_units[t00+3][0]);
-	assert(wu  == tile_dimensions_in_units[t00+5][0]);
-	assert(wu  == tile_dimensions_in_units[t00+6][0]);
-	assert(wu  == tile_dimensions_in_units[t00+8][0]);
-
-	assert(EXT == tile_dimensions_in_units[t00+3][1]);
-	assert(EXT == tile_dimensions_in_units[t00+4][1]);
-	assert(EXT == tile_dimensions_in_units[t00+5][1]);
-	assert(hu  == tile_dimensions_in_units[t00+1][1]);
-	assert(hu  == tile_dimensions_in_units[t00+2][1]);
-	assert(hu  == tile_dimensions_in_units[t00+6][1]);
-	assert(hu  == tile_dimensions_in_units[t00+7][1]);
-	assert(hu  == tile_dimensions_in_units[t00+8][1]);
-
-	const int px = get_tile_px(t00);
-
-	if (width) *width = getpx(wu, px);
-	if (height) *height = getpx(hu, px);
-
-	return 1;
+	assert(0 <= x && x <= 2);
+	assert(0 <= y && y <= 2);
+	const int index = x + 3*y;
+	assert(0 <= index && index < 9);
+	assert(!"TODO"); // TODO
+	return g;
 }
 
-void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
+void rt_3x3(struct r_glyph g, int x, int y, int w, int h)
 {
 	int wpx, hpx;
-	if (!rt_get_3x3_inner_dim(t00, &wpx, &hpx)) return;
+	if (!rt_get_3x3_inner_dim(g, &wpx, &hpx)) return;
 
 	assert((wpx >= 1) && (hpx >= 1));
 
 	const int midw = w-2*wpx;
 	const int midh = h-2*hpx;
 
-	const int bank = R_TILES;
-
-	const int px = get_tile_px(t00);
 	if (midw < 0 || midh < 0) {
 		// no room for corners; just plot the middle
-		rt_put(bank, px, t00+4, x, y, w, h);
+		rt_put(glyphmod_3x3(g,1,1), x, y, w, h);
 		return;
 	}
 
@@ -1376,24 +1347,22 @@ void rt_3x3(enum r_tile t00, int x, int y, int w, int h)
 	const int y1 = y+hpx;
 	const int y2 = y+h-hpx;
 
-	rt_put(bank, px, t00+0, x0, y0, wpx,  hpx);
-	rt_put(bank, px, t00+1, x1, y0, midw, hpx);
-	rt_put(bank, px, t00+2, x2, y0, wpx,  hpx);
+	rt_put(glyphmod_3x3(g,0,0), x0, y0, wpx,  hpx);
+	rt_put(glyphmod_3x3(g,1,0), x1, y0, midw, hpx);
+	rt_put(glyphmod_3x3(g,2,0), x2, y0, wpx,  hpx);
 
-	rt_put(bank, px, t00+3, x0, y1, wpx,  midh);
-	if (r_tile_sample(t00+4, v2(0,0)) > 0.0) {
-		rt_put(bank, px, t00+4, x1, y1, midw, midh);
-	}
-	rt_put(bank, px, t00+5, x2, y1, wpx,  midh);
+	rt_put(glyphmod_3x3(g,0,1), x0, y1, wpx,  midh);
+	rt_put(glyphmod_3x3(g,1,1), x1, y1, midw, midh);
+	rt_put(glyphmod_3x3(g,2,1), x2, y1, wpx,  midh);
 
-	rt_put(bank, px, t00+6, x0, y2, wpx,  hpx);
-	rt_put(bank, px, t00+7, x1, y2, midw, hpx);
-	rt_put(bank, px, t00+8, x2, y2, wpx,  hpx);
+	rt_put(glyphmod_3x3(g,0,2), x0, y2, wpx,  hpx);
+	rt_put(glyphmod_3x3(g,1,2), x1, y2, midw, hpx);
+	rt_put(glyphmod_3x3(g,2,2), x2, y2, wpx,  hpx);
 }
 
 void rt_quad(float x, float y, float w, float h)
 {
-	rt_put(R_TILES, 0, RT_one, x, y, w, h);
+	rt_put((struct r_glyph) { .glyph0=RT_ONE,.px=1 }, x, y, w, h);
 }
 
 void rt_clear(void)

@@ -2,7 +2,6 @@
 
 #include "ui.h"
 #include "common.h"
-#include "r_tile.h"
 
 #define POSTPROC_ENUMS \
 	ENUM(NONE) \
@@ -68,9 +67,6 @@ struct preferences {
 	#define FIELD(NAME,TYPE,DEFAULT) TYPE NAME;
 	PREFERENCE_FIELDS
 	#undef FIELD
-	#define TG(GROUP,DEFAULT_SZ,DESC) int tgsz_ ## GROUP;
-	TILE_GROUPS
-	#undef TG
 };
 
 enum action {
@@ -99,7 +95,6 @@ extern struct colorscheme colorscheme;
 
 void prefs_init();
 void prefs_save();
-int prefs_get_tile_group_sz(enum r_tile_group tg);
 
 #define PREFS_H
 #endif
