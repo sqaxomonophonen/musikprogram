@@ -94,21 +94,40 @@ void bsm_one()
 
 void bsm_circle(float r)
 {
+	// naive solution, I could probably do better with some kind of quad vs
+	// circle tests to see if I can quickly fill an entire area with 0.0 or
+	// 1.0?
 	float* b = push();
 	const int w = bsm.width;
 	const int h = bsm.height;
-	const float xstep = bsm.xstep;
-	const float ystep = bsm.ystep;
+	const int SUPERSAMPLE = 4;
+	const float ss1step = 1.0f / (float)SUPERSAMPLE;
+	const float ss2step = ss1step*ss1step;
+
+	const float x0step = bsm.xstep;
+	const float y0step = bsm.ystep;
+	const float x1step = x0step * ss1step;
+	const float y1step = y0step * ss1step;
 	const float r2 = r*r;
-	float y = bsm.y0;
+	float y0 = bsm.y0;
 	for (int py = 0; py < h; py++) {
-		float x = bsm.x0;
+		float x0 = bsm.x0;
 		for (int px = 0; px < w; px++) {
-			const float d2 = x*x + y*y;
-			*(b++) = d2 < r2 ? 1.0f : 0.0f;
-			x += xstep;
+			float y1 = y0;
+			float sum = 0.0f;
+			for (int qy = 0; qy < SUPERSAMPLE; qy++) {
+				float x1 = x0;
+				for (int qx = 0; qx < SUPERSAMPLE; qx++) {
+					const float d2 = x1*x1 + y1*y1;
+					sum += d2 < r2 ? ss2step : 0.0f;
+					x1 += x1step;
+				}
+				y1 += y1step;
+			}
+			*(b++) = sum;
+			x0 += x0step;
 		}
-		y += ystep;
+		y0 += y0step;
 	}
 }
 
