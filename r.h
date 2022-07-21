@@ -146,7 +146,7 @@ void rt_3x3(struct r_glyph g, int x, int y, int w, int h);
 void rt_quad(float x, float y, float w, float h);
 void rt_clear(void);
 
-static inline struct r_glyph rg_rbox_inner(int px)
+static inline struct r_glyph rt3x3_rbox_inner(int px)
 {
 	return (struct r_glyph) {
 		.glyph0 = RT3x3_RBOX_INNER,
@@ -154,7 +154,7 @@ static inline struct r_glyph rg_rbox_inner(int px)
 	};
 }
 
-static inline struct r_glyph rg_rbox_border(int px, float width)
+static inline struct r_glyph rt3x3_rbox_border(int px, float width)
 {
 	return (struct r_glyph) {
 		.glyph0 = RT3x3_RBOX_BORDER,

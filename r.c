@@ -514,9 +514,9 @@ static void glyph_raster(int index)
 		bsm_begin(w,h);
 
 		switch (glyph.glyph0) {
-		case RT_ONE: {
+		case RT_ONE:
 			bsm_one();
-		} break;
+			break;
 		case RT3x3_RBOX_INNER:
 			bsm_tx_3x3(glyph.cx, glyph.cy);
 			bsm_circle(glyph.px);

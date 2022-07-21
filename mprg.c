@@ -177,7 +177,7 @@ static void asset_pane_present(struct window* window, int right, float x)
 	const float s = 0.01f;
 	//rcol_plain(pma_alpha(s,s,s*1.5f,lerp(x, 0, 0.9)));
 	rcol_plain(pma_alpha(s,s,s, 0.95));
-	rt_3x3(rg_rbox_inner(5), 0,0,w,h);
+	rt_3x3(rt3x3_rbox_inner(5), 0,0,w,h);
 	r_end();
 
 	const int pad1 = 8;
@@ -360,9 +360,9 @@ static void init_styles()
 		st->font_px = 40;
 		st->x_padding = 3;
 		st->y_padding = 3;
-		const int rsz = 6;
-		st->bg3x3 = rg_rbox_inner(rsz);
-		st->border3x3 = rg_rbox_border(rsz, 1.5f);
+		const int rsz = 8;
+		st->bg3x3 = rt3x3_rbox_inner(rsz);
+		st->border3x3 = rt3x3_rbox_border(rsz, 1.5f);
 	}
 }
 
