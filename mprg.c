@@ -360,8 +360,9 @@ static void init_styles()
 		st->font_px = 40;
 		st->x_padding = 3;
 		st->y_padding = 3;
-		st->bg3x3 = rg_rbox_inner(8);
-		st->border3x3 = rg_rbox_border(8, 1.0f);
+		const int rsz = 6;
+		st->bg3x3 = rg_rbox_inner(rsz);
+		st->border3x3 = rg_rbox_border(rsz, 1.5f);
 	}
 }
 

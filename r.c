@@ -518,16 +518,32 @@ static void glyph_raster(int index)
 			bsm_one();
 		} break;
 		case RT3x3_RBOX_INNER:
-			bsm_one(); // XXX FIXME
+			bsm_tx_3x3(glyph.cx, glyph.cy);
+			bsm_circle(glyph.px);
 			break;
 		case RT3x3_RBOX_BORDER:
-			bsm_one(); // XXX FIXME
+			bsm_tx_3x3(glyph.cx, glyph.cy);
+			bsm_circle(glyph.px);
+			bsm_circle((float)glyph.px - glyph.f0);
+			bsm_sub();
 			break;
 		default:
 			assert(!"unhandled glyph0");
 		}
 
-		bsm_to8(p);
+		bsm_to8(p, ATLAS_WIDTH);
+		#if 0
+		printf("RENDER! %d %d,%d\n", glyph.glyph0, glyph.cx, glyph.cy);
+		uint8_t* pp = p;
+		for (int y = 0; y < h; y++) {
+			printf("[");
+			for (int x = 0; x < w; x++) {
+				printf("%c", *(pp++) > 0 ? '#' : ' ');
+			}
+			pp += ATLAS_WIDTH - w;
+			printf("]\n");
+		}
+		#endif
 		assert((bsm_n() == 0) && "stack not empty after rasterization");
 	}
 
@@ -1330,34 +1346,7 @@ static inline struct r_glyph glyphmod_3x3(struct r_glyph g, int cx, int cy)
 
 void rt_get_3x3_inner_dim(struct r_glyph g, int* width, int* height)
 {
-	int set_width = 0, set_height = 0;
-	for (int y = 0; y < 3; y++) {
-		int sum_width = 0;
-		int add_height = -1;
-		for (int x = 0; x < 3; x++) {
-			int w,h,ext_x,ext_y;
-			get_glyph_dim_ext(glyphmod_3x3(g,x,y), &w, &h, &ext_x, &ext_y);
-			assert((ext_x != 0) == (x == 1));
-			assert((ext_y != 0) == (y == 1));
-			if (!ext_x) sum_width += w;
-			if (!ext_y) {
-				if (add_height == -1) {
-					add_height = h;
-				} else {
-					assert(add_height == h);
-				}
-			}
-		}
-		if (add_height > 0) set_height += add_height;
-		if (y == 0) {
-			set_width = sum_width;
-		} else {
-			assert(sum_width == set_width);
-		}
-	}
-
-	if (width) *width = set_width;
-	if (height) *height = set_height;
+	get_glyph_dim(glyphmod_3x3(g,0,0), width, height);
 }
 
 void rt_3x3(struct r_glyph g, int x, int y, int w, int h)
@@ -1367,8 +1356,8 @@ void rt_3x3(struct r_glyph g, int x, int y, int w, int h)
 
 	assert((wpx >= 1) && (hpx >= 1));
 
-	const int midw = w-2*wpx;
-	const int midh = h-2*hpx;
+	const int midw = w-wpx*2;
+	const int midh = h-hpx*2;
 
 	if (midw < 0 || midh < 0) {
 		// no room for corners; just plot the middle
